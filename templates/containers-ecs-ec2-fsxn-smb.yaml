@@ -1,0 +1,335 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Config 1 (SMB variant) - Amazon ECS on EC2 Windows container instances that
+  mount an Amazon FSx for NetApp ONTAP SVM CIFS share over SMB and bind-mount it
+  into tasks. Container side only; the FSx for ONTAP file system / SVM and the
+  Active Directory (AD Connector or AWS Managed Microsoft AD) are referenced by
+  parameter. Static verification target (cfn-lint); not deployed.
+
+# The `Project` tag value below is a cost-allocation tag string for this
+# repository (aws-container-datastore-patterns). It is a cost tag, not a
+# reference to the GitHub repository name.
+
+# ==============================================================================
+# Why this shape
+# ==============================================================================
+# ECS + FSx for ONTAP over SMB is documented for the EC2 Windows launch type: a
+# domain-joined Windows container instance creates an SMB global mapping to the
+# SVM CIFS share, and the task bind-mounts the mapped path. See
+# docs/ja|en/ecs-ec2-fsxn-mount.md section 3.3.
+#
+# The SVM must be joined to Active Directory for SMB. This template references an
+# existing directory (DirectoryId) — deploy the AD side first with
+# templates/demo-ad-environment.yaml (AD Connector to on-premises AD) or an
+# AWS Managed Microsoft AD. The SVM AD join itself is performed outside this
+# template (see the AD integration procedure in the VMware-Migration-EC2-ONTAP
+# repository: docs/ja|en/ad-integration-for-migration.md).
+#
+# Domain join of the Windows EC2 instance uses AWS::SSM::Association with the
+# AWS-managed document AWS-JoinDirectoryServiceDomain. Do NOT use the EC2
+# SsmAssociations property with a custom SSM document — that fails with
+# "Document schema version, 2.2, is not supported by association that is created
+# with instance id". This mirrors the note already in demo-ad-environment.yaml.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network (existing, referenced)
+        Parameters:
+          - VpcId
+          - Subnet1Id
+          - Subnet2Id
+      - Label:
+          default: Active Directory (existing, referenced)
+        Parameters:
+          - DirectoryId
+          - AdDomainName
+          - OnPremDnsIp1
+          - OnPremDnsIp2
+      - Label:
+          default: FSx for ONTAP (existing, referenced)
+        Parameters:
+          - FsxnSmbUncPath
+          - FsxnSecurityGroupId
+      - Label:
+          default: ECS cluster and capacity
+        Parameters:
+          - InstanceType
+          - DesiredCapacity
+          - ContainerImage
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where the ECS Windows instances reside
+
+  Subnet1Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet 1 (must reach AD and the FSx for ONTAP SVM)
+
+  Subnet2Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet 2 (different AZ)
+
+  DirectoryId:
+    Type: String
+    Description: >
+      Existing directory ID (AD Connector or AWS Managed Microsoft AD) that the
+      Windows instances join. Produce it with demo-ad-environment (AD Connector)
+      or an AWS Managed Microsoft AD stack.
+    AllowedPattern: '^d-[0-9a-f]{10}$'
+
+  AdDomainName:
+    Type: String
+    Description: FQDN of the AD domain (e.g., corp.example.com)
+    AllowedPattern: '^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)+$'
+
+  OnPremDnsIp1:
+    Type: String
+    Description: Primary DNS/AD Domain Controller IP address
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}$'
+
+  OnPremDnsIp2:
+    Type: String
+    Description: Secondary DNS/AD Domain Controller IP address
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}$'
+
+  FsxnSmbUncPath:
+    Type: String
+    Description: >
+      UNC path of the FSx for ONTAP SVM CIFS share, e.g.
+      \\svm-netbios.corp.example.com\share. Mounted as a drive by the instance.
+    AllowedPattern: '^\\\\[^\\]+\\[^\\]+.*$'
+
+  FsxnSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: >
+      Security group attached to the FSx for ONTAP file system. This template
+      adds an SMB (445) ingress rule on it from the ECS Windows instances.
+
+  InstanceType:
+    Type: String
+    Default: m5.large
+    Description: EC2 instance type for ECS Windows container instances
+
+  DesiredCapacity:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    Description: Number of ECS Windows container instances
+
+  ContainerImage:
+    Type: String
+    Default: 'mcr.microsoft.com/windows/servercore:ltsc2022'
+    Description: >
+      Placeholder Windows container image. Replace with the image AWS Transform
+      containerization published to Amazon ECR.
+
+Resources:
+
+  # ---------- ECS instance security group ----------
+  EcsInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS Windows container instances for FSx for ONTAP SMB mount
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: ecs-ec2-fsxn-smb-instance-sg
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # Allow SMB (445) from the ECS Windows instances to the referenced FSx for
+  # ONTAP security group.
+  FsxnSmbIngressFromEcs:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref FsxnSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 445
+      ToPort: 445
+      SourceSecurityGroupId: !Ref EcsInstanceSecurityGroup
+      Description: SMB from ECS Windows container instances
+
+  # ---------- IAM ----------
+  EcsInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        # Required for the SSM domain-join document to read directory details.
+        - arn:aws:iam::aws:policy/AmazonSSMDirectoryServiceAccess
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  EcsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EcsInstanceRole
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # ---------- ECS cluster ----------
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: ecs-ec2-fsxn-smb
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # ---------- Launch template: Windows ECS-optimized AMI, ECS agent init, SMB mapping ----------
+  EcsLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: ecs-ec2-fsxn-smb-lt
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt EcsInstanceProfile.Arn
+        ImageId: '{{resolve:ssm:/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-ECS_Optimized/image_id}}'
+        SecurityGroupIds:
+          - !Ref EcsInstanceSecurityGroup
+        MetadataOptions:
+          HttpTokens: required
+        UserData:
+          Fn::Base64: !Sub |
+            <powershell>
+            # Initialize the ECS agent for this cluster with task IAM roles.
+            Initialize-ECSAgent -Cluster ${EcsCluster} -EnableTaskIAMRole
+            # Map the FSx for ONTAP SVM CIFS share to a drive for bind mounting.
+            # Domain join is handled by the SSM association below; this mapping
+            # succeeds once the instance is domain-joined and the SVM is AD-joined.
+            New-SmbGlobalMapping -RemotePath "${FsxnSmbUncPath}" -LocalPath "Z:" -Persistent $true
+            </powershell>
+
+  EcsAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '1'
+      MaxSize: '4'
+      DesiredCapacity: !Ref DesiredCapacity
+      VPCZoneIdentifier:
+        - !Ref Subnet1Id
+        - !Ref Subnet2Id
+      LaunchTemplate:
+        LaunchTemplateId: !Ref EcsLaunchTemplate
+        Version: !GetAtt EcsLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: ecs-ec2-fsxn-smb-instance
+          PropagateAtLaunch: true
+        - Key: Project
+          Value: aws-container-datastore-patterns
+          PropagateAtLaunch: true
+
+  # ---------- Domain join via SSM Association ----------
+  # Correct pattern: AWS::SSM::Association + AWS-JoinDirectoryServiceDomain,
+  # targeting instances by the ASG tag. Not the EC2 SsmAssociations property.
+  DomainJoinAssociation:
+    Type: AWS::SSM::Association
+    Properties:
+      Name: AWS-JoinDirectoryServiceDomain
+      AssociationName: ecs-ec2-fsxn-smb-domain-join
+      Targets:
+        - Key: tag:Name
+          Values:
+            - ecs-ec2-fsxn-smb-instance
+      Parameters:
+        directoryId:
+          - !Ref DirectoryId
+        directoryName:
+          - !Ref AdDomainName
+        dnsIpAddresses:
+          - !Ref OnPremDnsIp1
+          - !Ref OnPremDnsIp2
+
+  # ---------- Task definition: bind-mount the mapped SMB drive ----------
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: ecs-ec2-fsxn-smb-task
+      RequiresCompatibilities:
+        - EC2
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      Cpu: '1024'
+      Memory: '2048'
+      Volumes:
+        - Name: fsxontap-smb-volume
+          Host:
+            SourcePath: 'Z:\'
+      ContainerDefinitions:
+        - Name: app
+          Image: !Ref ContainerImage
+          Essential: true
+          MountPoints:
+            - ContainerPath: 'C:\data'
+              SourceVolume: fsxontap-smb-volume
+              ReadOnly: false
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: app
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/ecs-ec2-fsxn-smb
+      RetentionInDays: 30
+
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: EC2
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+Outputs:
+  ClusterName:
+    Description: ECS cluster name
+    Value: !Ref EcsCluster
+
+  ServiceName:
+    Description: ECS service name
+    Value: !GetAtt EcsService.Name
+
+  SmbDriveLetter:
+    Description: Drive letter the SVM CIFS share is mapped to on the host
+    Value: 'Z:'

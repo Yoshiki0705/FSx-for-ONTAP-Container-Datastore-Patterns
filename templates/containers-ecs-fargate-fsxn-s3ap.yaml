@@ -1,0 +1,267 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Config 3 - Amazon ECS on AWS Fargate reading and writing Amazon FSx for NetApp
+  ONTAP volume data through an S3 access point using the S3 object API. Creates
+  the S3 access point attachment (VPC origin), an S3 Gateway VPC endpoint, and a
+  Fargate service whose task role is scoped to the access point. The FSx for
+  ONTAP file system and volume are referenced by parameter. Static verification
+  target (cfn-lint); not deployed.
+
+# The `Project` tag value below is a cost-allocation tag string for this
+# repository (aws-container-datastore-patterns). It is a cost tag, not a
+# reference to the GitHub repository name.
+
+# ==============================================================================
+# Why this works on Fargate when NFS/iSCSI mounts do not
+# ==============================================================================
+# Fargate cannot mount FSx for ONTAP as a volume (no host NFS mount, no CSI node
+# pod). This template does NOT mount anything. The application in the task uses
+# the AWS SDK to call S3 object operations (GetObject/PutObject/ListObjectsV2)
+# against an S3 access point attached to the FSx for ONTAP volume. The data
+# physically stays on FSx for ONTAP. AWS documents "Amazon ECS tasks ... within
+# the VPC" as a Gateway-endpoint use case for these access points, so an in-VPC
+# Fargate task reaches the access point through the free S3 Gateway endpoint.
+#
+# The app must be written for object access (S3 SDK), not file access. Object
+# API constraints apply: max object 50 GiB, no versioning/object-lock/lifecycle/
+# conditional-writes, SSE-FSX only. See
+# docs/ja|en/atx-containerization-fsxn-storage-verification.md.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network (existing, referenced)
+        Parameters:
+          - VpcId
+          - Subnet1Id
+          - Subnet2Id
+          - RouteTableId
+      - Label:
+          default: FSx for ONTAP (existing, referenced)
+        Parameters:
+          - FsxnVolumeId
+          - FileSystemUnixUser
+      - Label:
+          default: Container
+        Parameters:
+          - ContainerImage
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where the Fargate tasks and the S3 access point are bound
+
+  Subnet1Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet 1 for Fargate tasks
+
+  Subnet2Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet 2 (different AZ)
+
+  RouteTableId:
+    Type: String
+    Description: >
+      Route table ID associated with the task subnets. The S3 Gateway endpoint
+      adds its prefix-list route here so in-VPC S3 traffic stays private.
+    AllowedPattern: '^rtb-[0-9a-f]{8}([0-9a-f]{9})?$'
+
+  FsxnVolumeId:
+    Type: String
+    Description: FSx for ONTAP volume ID to expose via the S3 access point
+    AllowedPattern: '^fsvol-[0-9a-f]{17,}$'
+
+  FileSystemUnixUser:
+    Type: String
+    Default: 'ec2-user'
+    Description: >
+      UNIX user name used to authorize file access made through the access point.
+      All object requests map to this file system user, whose ONTAP permissions
+      then decide whether the underlying file operation is allowed.
+    AllowedPattern: '^[^\r\n]{1,256}$'
+
+  ContainerImage:
+    Type: String
+    Default: 'public.ecr.aws/amazonlinux/amazonlinux:2023'
+    Description: >
+      Placeholder image. Replace with the S3-SDK application image AWS Transform
+      containerization published to Amazon ECR.
+
+Resources:
+
+  # ---------- S3 Gateway VPC endpoint (free; in-VPC S3 traffic) ----------
+  # Populates aws:SourceVpc so a VPC-origin access point accepts the request.
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref RouteTableId
+
+  # ---------- Task role: scoped to the access point ----------
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: fsxn-s3-access-point
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt FsxnS3AccessPoint.S3AccessPoint.ResourceARN
+                  - !Sub '${FsxnS3AccessPoint.S3AccessPoint.ResourceARN}/object/*'
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # ---------- FSx for ONTAP S3 access point (VPC origin) ----------
+  FsxnS3AccessPoint:
+    Type: AWS::FSx::S3AccessPointAttachment
+    Properties:
+      Name: fsxn-ecs-fargate-ap
+      Type: ONTAP
+      OntapConfiguration:
+        VolumeId: !Ref FsxnVolumeId
+        FileSystemIdentity:
+          Type: UNIX
+          UnixUser:
+            Name: !Ref FileSystemUnixUser
+      S3AccessPoint:
+        VpcConfiguration:
+          VpcId: !Ref VpcId
+        # Same-account authorization: the task role's identity policy already
+        # grants the S3 actions on this access point, so the access point policy
+        # only needs to scope callers to this account. Referencing the task role
+        # ARN here would create a circular dependency (task role -> access point
+        # ARN -> access point policy -> task role). VPC origin denies any caller
+        # outside the bound VPC regardless.
+        Policy:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:ListBucket
+              Resource: '*'
+
+  # ---------- ECS cluster + Fargate service ----------
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: ecs-fargate-fsxn-s3ap
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Fargate tasks calling the FSx for ONTAP S3 access point
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: ecs-fargate-fsxn-s3ap-task-sg
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/ecs-fargate-fsxn-s3ap
+      RetentionInDays: 30
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: ecs-fargate-fsxn-s3ap-task
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: '512'
+      Memory: '1024'
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: app
+          Image: !Ref ContainerImage
+          Essential: true
+          Environment:
+            - Name: FSXN_ACCESS_POINT_ARN
+              Value: !GetAtt FsxnS3AccessPoint.S3AccessPoint.ResourceARN
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: app
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref Subnet1Id
+            - !Ref Subnet2Id
+          SecurityGroups:
+            - !Ref TaskSecurityGroup
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+Outputs:
+  ClusterName:
+    Description: ECS cluster name
+    Value: !Ref EcsCluster
+
+  AccessPointArn:
+    Description: FSx for ONTAP S3 access point ARN used by the task
+    Value: !GetAtt FsxnS3AccessPoint.S3AccessPoint.ResourceARN
+
+  S3GatewayEndpointId:
+    Description: S3 Gateway VPC endpoint ID
+    Value: !Ref S3GatewayEndpoint

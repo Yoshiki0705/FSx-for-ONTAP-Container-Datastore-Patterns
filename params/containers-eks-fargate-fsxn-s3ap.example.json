@@ -1,0 +1,42 @@
+[
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "Subnet1Id",
+    "ParameterValue": "subnet-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "Subnet2Id",
+    "ParameterValue": "subnet-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "RouteTableId",
+    "ParameterValue": "rtb-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "ClusterName",
+    "ParameterValue": "eks-fargate-fsxn-s3ap"
+  },
+  {
+    "ParameterKey": "KubernetesVersion",
+    "ParameterValue": "1.31"
+  },
+  {
+    "ParameterKey": "ServiceAccountNamespace",
+    "ParameterValue": "default"
+  },
+  {
+    "ParameterKey": "ServiceAccountName",
+    "ParameterValue": "fsxn-s3-app"
+  },
+  {
+    "ParameterKey": "FsxnVolumeId",
+    "ParameterValue": "fsvol-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "FileSystemUnixUser",
+    "ParameterValue": "ec2-user"
+  }
+]

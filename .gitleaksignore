@@ -1,0 +1,9 @@
+# False positives, scoped to exact fingerprints (file:rule:line).
+# The generic-api-key rule flags the CloudFormation parameter *names*
+# "ExistingSubnet1Id" / "ExistingSubnet2Id" as high-entropy strings. They are
+# parameter keys in an example params file, not secrets. Placeholder resource
+# IDs in these files use the canonical AWS -0123456789abcdef0 form, which the
+# gitleaks config allowlists. Scoped to these two lines only, so any new finding
+# elsewhere still fails the gate.
+params/containers-ecs-ec2-fsxn-nfs.example.json:generic-api-key:11
+params/containers-ecs-ec2-fsxn-nfs.example.json:generic-api-key:15

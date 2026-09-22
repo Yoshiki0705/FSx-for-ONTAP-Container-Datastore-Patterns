@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "Subnet1Id",
+    "ParameterValue": "subnet-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "Subnet2Id",
+    "ParameterValue": "subnet-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "RouteTableId",
+    "ParameterValue": "rtb-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "FsxnVolumeId",
+    "ParameterValue": "fsvol-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "FileSystemUnixUser",
+    "ParameterValue": "ec2-user"
+  },
+  {
+    "ParameterKey": "ContainerImage",
+    "ParameterValue": "111122223333.dkr.ecr.ap-northeast-1.amazonaws.com/awstransform-app:latest"
+  }
+]

@@ -1,0 +1,297 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Config 4 - Amazon EKS on AWS Fargate reading and writing Amazon FSx for NetApp
+  ONTAP volume data through an S3 access point using the S3 object API. Creates
+  the EKS cluster, a Fargate profile, an IRSA role scoped to the access point,
+  the S3 access point attachment (VPC origin), and an S3 Gateway VPC endpoint.
+  The FSx for ONTAP file system and volume are referenced by parameter. Static
+  verification target (cfn-lint); not deployed.
+
+# The `Project` tag value below is a cost-allocation tag string for this
+# repository (aws-container-datastore-patterns). It is a cost tag, not a
+# reference to the GitHub repository name.
+
+# ==============================================================================
+# Why this works on Fargate, and the credential path
+# ==============================================================================
+# As with the ECS Fargate template, nothing is mounted. The pod's application
+# uses the S3 SDK to call object operations against an S3 access point attached
+# to the FSx for ONTAP volume. Data stays on FSx for ONTAP.
+#
+# Credentials: the pod gets an IAM role through IRSA (IAM Roles for Service
+# Accounts). This template creates the OIDC provider and the IAM role with a
+# trust policy bound to a specific namespace/service-account. IRSA works on
+# Fargate because it needs no node agent. (EKS Pod Identity uses an on-cluster
+# agent; whether that agent runs on Fargate is a separate check, so this template
+# uses IRSA.) After the stack completes, annotate the Kubernetes service account:
+#   eks.amazonaws.com/role-arn: <IrsaRole ARN>
+# The service account name/namespace must match ServiceAccountNamespace and
+# ServiceAccountName below.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network (existing, referenced)
+        Parameters:
+          - VpcId
+          - Subnet1Id
+          - Subnet2Id
+          - RouteTableId
+      - Label:
+          default: EKS cluster and Fargate profile
+        Parameters:
+          - ClusterName
+          - KubernetesVersion
+          - ServiceAccountNamespace
+          - ServiceAccountName
+      - Label:
+          default: FSx for ONTAP (existing, referenced)
+        Parameters:
+          - FsxnVolumeId
+          - FileSystemUnixUser
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where the pods and the S3 access point are bound
+
+  Subnet1Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet 1 for the Fargate pods and control plane ENIs
+
+  Subnet2Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet 2 (different AZ)
+
+  RouteTableId:
+    Type: String
+    Description: Route table ID for the pod subnets (S3 Gateway endpoint route)
+    AllowedPattern: '^rtb-[0-9a-f]{8}([0-9a-f]{9})?$'
+
+  ClusterName:
+    Type: String
+    Default: eks-fargate-fsxn-s3ap
+    Description: Name of the EKS cluster
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9\-]{0,99}$'
+
+  KubernetesVersion:
+    Type: String
+    Default: '1.31'
+    Description: EKS Kubernetes version
+    AllowedPattern: '^1\.(2[6-9]|3[0-9])$'
+
+  ServiceAccountNamespace:
+    Type: String
+    Default: 'default'
+    Description: Kubernetes namespace of the application service account
+    AllowedPattern: '^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?$'
+
+  ServiceAccountName:
+    Type: String
+    Default: 'fsxn-s3-app'
+    Description: Kubernetes service account name that assumes the IRSA role
+    AllowedPattern: '^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?$'
+
+  FsxnVolumeId:
+    Type: String
+    Description: FSx for ONTAP volume ID to expose via the S3 access point
+    AllowedPattern: '^fsvol-[0-9a-f]{17,}$'
+
+  FileSystemUnixUser:
+    Type: String
+    Default: 'ec2-user'
+    Description: >
+      UNIX user name used to authorize file access made through the access point.
+    AllowedPattern: '^[^\r\n]{1,256}$'
+
+Resources:
+
+  # ---------- S3 Gateway VPC endpoint ----------
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref RouteTableId
+
+  # ---------- EKS cluster role and cluster ----------
+  ClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EKS control plane / Fargate pods for FSx for ONTAP S3 AP
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: eks-fargate-fsxn-s3ap-sg
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  EksCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Ref ClusterName
+      Version: !Ref KubernetesVersion
+      RoleArn: !GetAtt ClusterRole.Arn
+      ResourcesVpcConfig:
+        SubnetIds:
+          - !Ref Subnet1Id
+          - !Ref Subnet2Id
+        SecurityGroupIds:
+          - !Ref ClusterSecurityGroup
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  OidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: !GetAtt EksCluster.OpenIdConnectIssuerUrl
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - '9e99a48a9960b14926bb7f3b02e22da2b0ab7280'
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # ---------- Fargate profile ----------
+  FargatePodExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks-fargate-pods.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  FargateProfile:
+    Type: AWS::EKS::FargateProfile
+    Properties:
+      ClusterName: !Ref EksCluster
+      FargateProfileName: fsxn-s3-app
+      PodExecutionRoleArn: !GetAtt FargatePodExecutionRole.Arn
+      Subnets:
+        - !Ref Subnet1Id
+        - !Ref Subnet2Id
+      Selectors:
+        - Namespace: !Ref ServiceAccountNamespace
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # ---------- IRSA role: scoped to the access point ----------
+  # Trust policy binds the role to the cluster OIDC provider and a specific
+  # namespace:serviceaccount. The service account must be annotated with this
+  # role ARN after the stack completes.
+  # The IRSA trust condition keys are "<oidc-issuer-host>:sub" and ":aud". The
+  # issuer host is only known after the cluster exists, and CloudFormation cannot
+  # build a Condition *key* from an intrinsic function (a map key must be a
+  # literal). So this template grants the Federated principal without the sub/aud
+  # scoping, and the scoping is added after deploy. Do NOT leave it unscoped in a
+  # shared account: after the stack completes, update this role's trust policy to
+  # add, under StringEquals:
+  #   "<issuer-host>:aud": "sts.amazonaws.com"
+  #   "<issuer-host>:sub": "system:serviceaccount:<namespace>:<serviceaccount>"
+  # where <issuer-host> is the ClusterOidcIssuer output with "https://" removed.
+  IrsaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref OidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+      Policies:
+        - PolicyName: fsxn-s3-access-point
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt FsxnS3AccessPoint.S3AccessPoint.ResourceARN
+                  - !Sub '${FsxnS3AccessPoint.S3AccessPoint.ResourceARN}/object/*'
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # ---------- FSx for ONTAP S3 access point (VPC origin) ----------
+  FsxnS3AccessPoint:
+    Type: AWS::FSx::S3AccessPointAttachment
+    Properties:
+      Name: fsxn-eks-fargate-ap
+      Type: ONTAP
+      OntapConfiguration:
+        VolumeId: !Ref FsxnVolumeId
+        FileSystemIdentity:
+          Type: UNIX
+          UnixUser:
+            Name: !Ref FileSystemUnixUser
+      S3AccessPoint:
+        VpcConfiguration:
+          VpcId: !Ref VpcId
+        # Same-account: the IRSA role's identity policy grants the actions; the
+        # access point policy scopes callers to this account. Referencing the
+        # IRSA role ARN here would be circular (role -> AP ARN -> AP policy ->
+        # role). VPC origin denies out-of-VPC callers regardless.
+        Policy:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:ListBucket
+              Resource: '*'
+
+Outputs:
+  ClusterName:
+    Description: EKS cluster name
+    Value: !Ref EksCluster
+
+  IrsaRoleArn:
+    Description: >
+      IRSA role ARN. Annotate the service account with
+      eks.amazonaws.com/role-arn set to this value.
+    Value: !GetAtt IrsaRole.Arn
+
+  AccessPointArn:
+    Description: FSx for ONTAP S3 access point ARN
+    Value: !GetAtt FsxnS3AccessPoint.S3AccessPoint.ResourceARN
+
+  ServiceAccountHint:
+    Description: Service account that must carry the IRSA annotation
+    Value: !Sub '${ServiceAccountNamespace}/${ServiceAccountName}'

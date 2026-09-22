@@ -1,0 +1,38 @@
+[
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "Subnet1Id",
+    "ParameterValue": "subnet-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "Subnet2Id",
+    "ParameterValue": "subnet-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "ClusterName",
+    "ParameterValue": "eks-ec2-fsxn-trident"
+  },
+  {
+    "ParameterKey": "KubernetesVersion",
+    "ParameterValue": "1.31"
+  },
+  {
+    "ParameterKey": "NodeInstanceType",
+    "ParameterValue": "m5.large"
+  },
+  {
+    "ParameterKey": "NodeDesiredSize",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "FsxnSecurityGroupId",
+    "ParameterValue": "sg-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "TridentAddonVersion",
+    "ParameterValue": "DEFAULT"
+  }
+]

@@ -1,0 +1,369 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Config 1 - Amazon ECS on EC2 launch type with Amazon FSx for NetApp ONTAP
+  mounted over NFS on the container instances and bind-mounted into tasks.
+  Container side only; the FSx for ONTAP file system and SVM are referenced by
+  parameter (created elsewhere, e.g. poc-environment stack). Static verification
+  target (cfn-lint); not deployed.
+
+# The `Project` tag value below is a cost-allocation tag string for this
+# repository (aws-container-datastore-patterns). It is a cost tag, not a
+# reference to the GitHub repository name.
+
+# ==============================================================================
+# Why this shape
+# ==============================================================================
+# ECS + FSx for ONTAP is documented for the EC2 launch type only: the container
+# instance mounts the SVM volume over NFS (Linux) and the task bind-mounts that
+# host path via `volumes.host.sourcePath` + `mountPoints`. Fargate cannot do this
+# because Fargate task definitions support only bind mount host volumes and EFS
+# volumes (no host NFS mount, no dockerVolumeConfiguration). See
+# docs/ja|en/atx-containerization-fsxn-storage-verification.md.
+#
+# The NFS mount is performed by the instance user-data. The task definition points
+# at the host mount path. If the mount is not present when a task starts, the task
+# still starts but the bind-mounted directory is empty — treat the mount as a
+# launch prerequisite, not something the task creates.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network (reference existing or create minimal)
+        Parameters:
+          - CreateNetwork
+          - ExistingVpcId
+          - ExistingSubnet1Id
+          - ExistingSubnet2Id
+          - NewVpcCidr
+          - NewSubnet1Cidr
+          - NewSubnet2Cidr
+      - Label:
+          default: FSx for ONTAP (existing, referenced)
+        Parameters:
+          - FsxnSvmNfsEndpoint
+          - FsxnVolumeJunctionPath
+          - FsxnSecurityGroupId
+      - Label:
+          default: ECS cluster and capacity
+        Parameters:
+          - InstanceType
+          - DesiredCapacity
+          - ContainerImage
+
+Parameters:
+  CreateNetwork:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      true = create a minimal VPC and two private subnets. false = use the
+      Existing* parameters below. Mirrors the existing/new selection pattern
+      used elsewhere in this repository.
+
+  # Placeholder defaults keep the format valid for static linting. Replace them
+  # with real IDs when CreateNetwork = false; they are ignored when true.
+  ExistingVpcId:
+    Type: String
+    Default: 'vpc-00000000000000000'
+    Description: Existing VPC ID (used when CreateNetwork = false)
+    AllowedPattern: '^vpc-[0-9a-f]{8}([0-9a-f]{9})?$'
+
+  ExistingSubnet1Id:
+    Type: String
+    Default: 'subnet-00000000000000000'
+    Description: Existing private subnet 1 ID (used when CreateNetwork = false)
+    AllowedPattern: '^subnet-[0-9a-f]{8}([0-9a-f]{9})?$'
+
+  ExistingSubnet2Id:
+    Type: String
+    Default: 'subnet-00000000000000000'
+    Description: Existing private subnet 2 ID (used when CreateNetwork = false)
+    AllowedPattern: '^subnet-[0-9a-f]{8}([0-9a-f]{9})?$'
+
+  NewVpcCidr:
+    Type: String
+    Default: '10.20.0.0/16'
+    Description: CIDR for the new VPC (used when CreateNetwork = true)
+
+  NewSubnet1Cidr:
+    Type: String
+    Default: '10.20.1.0/24'
+    Description: CIDR for new subnet 1 (used when CreateNetwork = true)
+
+  NewSubnet2Cidr:
+    Type: String
+    Default: '10.20.2.0/24'
+    Description: CIDR for new subnet 2 (used when CreateNetwork = true)
+
+  FsxnSvmNfsEndpoint:
+    Type: String
+    Description: >
+      NFS endpoint of the FSx for ONTAP SVM (DNS name or IP). The container
+      instance mounts <endpoint>:<junction path> over NFS.
+    AllowedPattern: '^[a-zA-Z0-9.\-]+$'
+
+  FsxnVolumeJunctionPath:
+    Type: String
+    Default: '/vol1'
+    Description: Junction path of the FSx for ONTAP volume to mount
+    AllowedPattern: '^/.*'
+
+  FsxnSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: >
+      Security group attached to the FSx for ONTAP file system. This template
+      adds an ingress rule on it for NFS from the ECS instances.
+
+  InstanceType:
+    Type: String
+    Default: m5.large
+    Description: EC2 instance type for ECS container instances
+
+  DesiredCapacity:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    Description: Number of ECS container instances
+
+  ContainerImage:
+    Type: String
+    Default: 'public.ecr.aws/amazonlinux/amazonlinux:2023'
+    Description: >
+      Placeholder container image. Replace with the image AWS Transform
+      containerization published to Amazon ECR.
+
+Conditions:
+  DoCreateNetwork: !Equals [!Ref CreateNetwork, 'true']
+
+Resources:
+
+  # ---------- Optional network (created only when CreateNetwork = true) ----------
+  Vpc:
+    Type: AWS::EC2::VPC
+    Condition: DoCreateNetwork
+    Properties:
+      CidrBlock: !Ref NewVpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: ecs-ec2-fsxn-nfs-vpc
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Condition: DoCreateNetwork
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref NewSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: ecs-ec2-fsxn-nfs-subnet-1
+
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Condition: DoCreateNetwork
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref NewSubnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: ecs-ec2-fsxn-nfs-subnet-2
+
+  # ---------- ECS instance security group ----------
+  EcsInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS container instances for FSx for ONTAP NFS mount
+      VpcId: !If [DoCreateNetwork, !Ref Vpc, !Ref ExistingVpcId]
+      Tags:
+        - Key: Name
+          Value: ecs-ec2-fsxn-nfs-instance-sg
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # Allow NFS from the ECS instances to the referenced FSx for ONTAP security
+  # group. Adding the rule here (rather than editing the FSx SG inline) keeps the
+  # FSx SG owned by its own stack while granting this workload's access.
+  FsxnNfsIngressFromEcs:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref FsxnSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 2049
+      ToPort: 2049
+      SourceSecurityGroupId: !Ref EcsInstanceSecurityGroup
+      Description: NFS from ECS container instances
+
+  # ---------- IAM ----------
+  EcsInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  EcsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EcsInstanceRole
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # ---------- ECS cluster ----------
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: ecs-ec2-fsxn-nfs
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  # ---------- Launch template: mount FSx for ONTAP over NFS in user-data ----------
+  EcsLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: ecs-ec2-fsxn-nfs-lt
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt EcsInstanceProfile.Arn
+        ImageId: '{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id}}'
+        SecurityGroupIds:
+          - !Ref EcsInstanceSecurityGroup
+        MetadataOptions:
+          HttpTokens: required
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euo pipefail
+            # Register with the ECS cluster
+            echo "ECS_CLUSTER=${EcsCluster}" >> /etc/ecs/ecs.config
+            # NFS client and mount of the FSx for ONTAP volume
+            dnf install -y nfs-utils
+            mkdir -p /mnt/fsxontap
+            mount -t nfs -o nfsvers=4.1,_netdev \
+              ${FsxnSvmNfsEndpoint}:${FsxnVolumeJunctionPath} /mnt/fsxontap
+            echo "${FsxnSvmNfsEndpoint}:${FsxnVolumeJunctionPath} /mnt/fsxontap nfs nfsvers=4.1,_netdev 0 0" >> /etc/fstab
+
+  EcsAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '1'
+      MaxSize: '4'
+      DesiredCapacity: !Ref DesiredCapacity
+      VPCZoneIdentifier:
+        - !If [DoCreateNetwork, !Ref Subnet1, !Ref ExistingSubnet1Id]
+        - !If [DoCreateNetwork, !Ref Subnet2, !Ref ExistingSubnet2Id]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref EcsLaunchTemplate
+        Version: !GetAtt EcsLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: ecs-ec2-fsxn-nfs-instance
+          PropagateAtLaunch: true
+        - Key: Project
+          Value: aws-container-datastore-patterns
+          PropagateAtLaunch: true
+
+  # ---------- Task definition: bind-mount the host NFS path into the container ----------
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: ecs-ec2-fsxn-nfs-task
+      RequiresCompatibilities:
+        - EC2
+      NetworkMode: awsvpc
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      Cpu: '512'
+      Memory: '1024'
+      Volumes:
+        - Name: fsxontap-volume
+          Host:
+            SourcePath: /mnt/fsxontap
+      ContainerDefinitions:
+        - Name: app
+          Image: !Ref ContainerImage
+          Essential: true
+          MountPoints:
+            - ContainerPath: /data
+              SourceVolume: fsxontap-volume
+              ReadOnly: false
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: app
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/ecs-ec2-fsxn-nfs
+      RetentionInDays: 30
+
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: EC2
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !If [DoCreateNetwork, !Ref Subnet1, !Ref ExistingSubnet1Id]
+            - !If [DoCreateNetwork, !Ref Subnet2, !Ref ExistingSubnet2Id]
+          SecurityGroups:
+            - !Ref EcsInstanceSecurityGroup
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+Outputs:
+  ClusterName:
+    Description: ECS cluster name
+    Value: !Ref EcsCluster
+
+  ServiceName:
+    Description: ECS service name
+    Value: !GetAtt EcsService.Name
+
+  MountPath:
+    Description: Host path where the FSx for ONTAP volume is mounted
+    Value: /mnt/fsxontap

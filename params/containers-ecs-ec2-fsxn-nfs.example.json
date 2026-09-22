@@ -1,0 +1,42 @@
+[
+  {
+    "ParameterKey": "CreateNetwork",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "ExistingVpcId",
+    "ParameterValue": "vpc-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "ExistingSubnet1Id",
+    "ParameterValue": "subnet-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "ExistingSubnet2Id",
+    "ParameterValue": "subnet-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "FsxnSvmNfsEndpoint",
+    "ParameterValue": "svm-01234567.fs-0123456789abcdef0.fsx.ap-northeast-1.amazonaws.com"
+  },
+  {
+    "ParameterKey": "FsxnVolumeJunctionPath",
+    "ParameterValue": "/vol1"
+  },
+  {
+    "ParameterKey": "FsxnSecurityGroupId",
+    "ParameterValue": "sg-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "m5.large"
+  },
+  {
+    "ParameterKey": "DesiredCapacity",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "ContainerImage",
+    "ParameterValue": "111122223333.dkr.ecr.ap-northeast-1.amazonaws.com/awstransform-app:latest"
+  }
+]
