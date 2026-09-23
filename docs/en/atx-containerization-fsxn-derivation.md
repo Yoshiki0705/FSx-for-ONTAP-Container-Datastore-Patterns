@@ -206,6 +206,86 @@ This path has room to be split into a separate repository / Kiro project from th
 
 ---
 
+## 9. Third-Party VM → EC2 Migration (NetApp Shift Toolkit v8.0)
+
+Sections 1–8 cover the AWS Transform-centered paths. Landing a VMware VM on AWS and placing
+its data area on FSx for ONTAP is also achievable with **NetApp Shift Toolkit**, not only AWS
+Transform / MGN. Relative to this repository's subject (container data stores), this provides
+the "entry to migration" — the first of two stages, where a container later reaches the
+FSx for ONTAP it lands on.
+
+### 9.1 Positioning of Shift Toolkit [Documented]
+
+Shift Toolkit is a standalone product for cross-hypervisor VM migration and disk conversion,
+characterized by fast FlexClone-based conversion (source: [Shift Toolkit overview](https://docs.netapp.com/us-en/netapp-solutions/vm-migrate/migrate-overview.html)).
+Its traditional targets are VMware ESXi ⇄ Microsoft Hyper-V, and ESXi → OLVM / Red Hat
+OpenShift Virtualization / Proxmox VE. **This version of the overview does not list AWS / EC2
+as a target.** AWS support was added as a preview feature in v8.0.
+
+### 9.2 AWS support in v8.0 (Early Preview) [Documented][Preview]
+
+Shift Toolkit v8.0 introduced migration to AWS as a preview feature (source: [What's New in Shift v8.0 (NetApp Community)](https://community.netapp.com/community/discussion/467669/what-s-new-in-shift-v8-0-file-to-lun-ec2-fsx-for-ontap-trident-integration-more)).
+
+| Feature | Content | Maturity |
+|---|---|---|
+| EC2 with FSx for ONTAP Support | Converts a VM's **OS disks to EBS format** and its **data disks to FSx for ONTAP**, migrating to EC2. Uses ONTAP snapshots / SnapMirror / FSx for ONTAP to avoid the traditional copy process. OS disk conversion has two paths: AWS Import/Export APIs and Direct Access APIs (EBS snapshot creation) | Early Preview |
+| File-to-LUN migration | Converts an existing file (e.g. VMDK) on a FlexVol **directly into a block (iSCSI LUN)**, preserving data layout | Preview |
+| Shift as an Add-On for Trident | With Trident 26.06+, integrates with the CSI provisioner for OpenShift Virtualization; zero-copy cold migration | Preview |
+
+**Early Preview constraint (must be stated)**: as of this research (2026-09-23), enabling EC2
+as a target requires contacting NetApp support, per the article. Its maturity differs from the
+GA AWS Transform / MGN, so state this difference when relying on it in a design.
+
+#### Why switch from file to block (iSCSI LUN)
+
+The article describes file-to-LUN as seamlessly moving data from file-based storage to block
+(iSCSI LUN) while preserving data layout [Documented]. The motivation it gives is migration
+speed and parallelism: moving from a block-backed hypervisor via direct copy or VDDK is slow,
+so you storage-vMotion into an ONTAP NFS datastore first and then convert into the target's
+block storage (the article's example is OpenShift Virtualization) with **high parallelism**
+[Documented]. Entering migration as a file moves fast and flexibly; landing as block matches
+the next operational requirement — that is the switch.
+
+The following are not enumerated in the article; they are general motivations derived from the
+ONTAP block / file split (section 5) [Documented, general reasoning].
+
+- **File for migration, block for operation**: run the migration phase over NFS (file) for high
+  parallelism and low operational cost, then take iSCSI LUN (block) in the operational phase for
+  single-writer performance or a dedicated disk.
+- **Workloads that require block**: database data areas, middleware that assumes a raw block
+  device, dedicated volumes per StatefulSet replica, and workloads demanding dedicated IOPS —
+  each suits block (mostly RWO) rather than a file share (RWX) (consistent with section 5).
+- **Targets that treat VM disks as block**: OpenShift Virtualization / KubeVirt commonly handle
+  VM disks as block PVCs, creating demand to convert a disk moved as a file into a block LUN on
+  landing.
+
+The use cases are shown as types, not specific customer cases. Because file-to-LUN is a preview
+feature, confirming its hands-on behavior and the workloads it fits requires hands-on
+verification (C5 / C6 in 9.4).
+
+### 9.3 Connecting to the container data store (two-stage migration) [Documented]
+
+Moving a VM to EC2 + FSx for ONTAP with Shift Toolkit v8.0 places the data on an FSx for ONTAP
+volume / LUN. A container can later reach that same data (EKS via a Trident PV, ECS via
+host NFS on EC2) over **iSCSI or NFS**. ONTAP's multiprotocol capability allows access to the
+same volume over multiple protocols with no data migration on protocol switch (the Trident /
+host NFS paths of sections 1–8 apply as-is). The v8.0 file-to-LUN feature is a concrete example
+of switching something migrated as a file over to block.
+
+The access form and the Fargate constraints (section 4) are the same whether the migration
+entry is AWS Transform or Shift Toolkit. That is, Fargate cannot use FSx for ONTAP as a PV /
+data area; you choose EC2 worker nodes / the EC2 launch type — the same trade-off holds on this
+path too.
+
+### 9.4 Unverified items (section 9)
+
+| # | Item | Scope searched (2026-09-23) |
+|---|---|---|
+| C5 | GA timing and general-availability conditions for v8.0 AWS support | Confirmed Early Preview in the community article. GA timing and conditions for use without contacting support are not stated in the article |
+| C6 | Hands-on behavior of a container reaching the post-migration data disk (FSx for ONTAP) | Not performed in this repository. Inferred from the general behavior of ONTAP multiprotocol and Trident |
+
+---
+
 ## Reference Links
 
 - [AWS Transform adds containerization capability during migrations (What's New, 2026-05-11)](https://aws.amazon.com/about-aws/whats-new/2026/05/aws-transform-containerization/)
@@ -224,3 +304,5 @@ This path has room to be split into a separate repository / Kiro project from th
 - [Simplify compute management with AWS Fargate (EKS)](https://docs.aws.amazon.com/eks/latest/userguide/fargate.html)
 - [AWS Transform FSx for ONTAP support GA verification (separate repository VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/en/atx-fsxn-ga-verification.md)
 - [Procedure: VMware → EC2 / FSx for ONTAP migration with AWS Transform (separate repository)](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/en/aws-transform-migration-procedure.md)
+- [NetApp Shift Toolkit overview (cross-hypervisor migration)](https://docs.netapp.com/us-en/netapp-solutions/vm-migrate/migrate-overview.html)
+- [What's New in Shift v8.0: File-to-LUN, EC2 + FSx for ONTAP, Trident (NetApp Community)](https://community.netapp.com/community/discussion/467669/what-s-new-in-shift-v8-0-file-to-lun-ec2-fsx-for-ontap-trident-integration-more)
