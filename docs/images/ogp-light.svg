@@ -1,63 +1,48 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="Helvetica, Arial, 'Noto Sans', sans-serif">
-  <!-- Background -->
+  <!-- Background: clean white -->
   <rect width="1280" height="640" fill="#FFFFFF"/>
-  <rect width="1280" height="640" fill="url(#grad)"/>
-  <defs>
-    <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#EEF2F6"/>
-    </linearGradient>
-  </defs>
 
-  <!-- Left accent bar (AWS orange) -->
-  <rect x="0" y="0" width="14" height="640" fill="#FF9900"/>
-
-  <!-- Eyebrow -->
-  <text x="80" y="132" fill="#D17800" font-size="30" font-weight="700" letter-spacing="3">AMAZON FSx FOR NETAPP ONTAP</text>
+  <!-- Thin restrained accent rule under the title block -->
+  <rect x="80" y="356" width="132" height="5" fill="#0B0B0D"/>
 
   <!-- Title -->
-  <text x="80" y="228" fill="#232F3E" font-size="76" font-weight="800">FSx for ONTAP as a</text>
-  <text x="80" y="316" fill="#232F3E" font-size="76" font-weight="800">Container Data Store</text>
+  <text x="80" y="212" fill="#0B0B0D" font-size="82" font-weight="800">ONTAP as a</text>
+  <text x="80" y="308" fill="#0B0B0D" font-size="82" font-weight="800">Container Data Store</text>
+
+  <!-- 'on AWS' set apart in muted grey to keep the platform secondary -->
+  <text x="80" y="404" fill="#6B7075" font-size="46" font-weight="600">on AWS</text>
 
   <!-- Subtitle -->
-  <text x="80" y="388" fill="#4A5A6A" font-size="40" font-weight="500">5 patterns for Amazon ECS / EKS</text>
+  <text x="80" y="466" fill="#3C4043" font-size="34" font-weight="500">5 patterns for Amazon ECS / EKS</text>
 
-  <!-- Keyword chips -->
-  <g font-size="30" font-weight="600">
+  <!-- Keyword chips (muted, low-contrast borders) -->
+  <g font-size="28" font-weight="600">
     <g>
-      <rect x="80"  y="452" width="120" height="58" rx="29" fill="#F2F5F8" stroke="#C7D2DD"/>
-      <text x="140" y="490" fill="#232F3E" text-anchor="middle">ECS</text>
+      <rect x="80"  y="512" width="112" height="54" rx="27" fill="#F5F6F7" stroke="#D3D6DA"/>
+      <text x="136" y="547" fill="#0B0B0D" text-anchor="middle">ECS</text>
     </g>
     <g>
-      <rect x="216" y="452" width="120" height="58" rx="29" fill="#F2F5F8" stroke="#C7D2DD"/>
-      <text x="276" y="490" fill="#232F3E" text-anchor="middle">EKS</text>
+      <rect x="208" y="512" width="112" height="54" rx="27" fill="#F5F6F7" stroke="#D3D6DA"/>
+      <text x="264" y="547" fill="#0B0B0D" text-anchor="middle">EKS</text>
     </g>
     <g>
-      <rect x="352" y="452" width="176" height="58" rx="29" fill="#F2F5F8" stroke="#C7D2DD"/>
-      <text x="440" y="490" fill="#232F3E" text-anchor="middle">Fargate</text>
+      <rect x="336" y="512" width="164" height="54" rx="27" fill="#F5F6F7" stroke="#D3D6DA"/>
+      <text x="418" y="547" fill="#0B0B0D" text-anchor="middle">Fargate</text>
     </g>
     <g>
-      <rect x="544" y="452" width="196" height="58" rx="29" fill="#F2F5F8" stroke="#C7D2DD"/>
-      <text x="642" y="490" fill="#232F3E" text-anchor="middle">NFS / SMB</text>
+      <rect x="516" y="512" width="184" height="54" rx="27" fill="#F5F6F7" stroke="#D3D6DA"/>
+      <text x="608" y="547" fill="#0B0B0D" text-anchor="middle">NFS / SMB</text>
     </g>
     <g>
-      <rect x="756" y="452" width="252" height="58" rx="29" fill="#F2F5F8" stroke="#C7D2DD"/>
-      <text x="882" y="490" fill="#232F3E" text-anchor="middle">NetApp Trident</text>
+      <rect x="716" y="512" width="228" height="54" rx="27" fill="#F5F6F7" stroke="#D3D6DA"/>
+      <text x="830" y="547" fill="#0B0B0D" text-anchor="middle">NetApp Trident</text>
     </g>
     <g>
-      <rect x="80"  y="528" width="310" height="58" rx="29" fill="#F2F5F8" stroke="#C7D2DD"/>
-      <text x="235" y="566" fill="#232F3E" text-anchor="middle">S3 Access Points</text>
-    </g>
-    <g>
-      <rect x="406" y="528" width="240" height="58" rx="29" fill="#F2F5F8" stroke="#C7D2DD"/>
-      <text x="526" y="566" fill="#232F3E" text-anchor="middle">CloudFormation</text>
-    </g>
-    <g>
-      <rect x="662" y="528" width="230" height="58" rx="29" fill="#F2F5F8" stroke="#C7D2DD"/>
-      <text x="777" y="566" fill="#232F3E" text-anchor="middle">AWS Transform</text>
+      <rect x="960" y="512" width="256" height="54" rx="27" fill="#F5F6F7" stroke="#D3D6DA"/>
+      <text x="1088" y="547" fill="#0B0B0D" text-anchor="middle">S3 Access Points</text>
     </g>
   </g>
 
   <!-- Footer handle -->
-  <text x="1200" y="600" fill="#6B7B8C" font-size="26" font-weight="500" text-anchor="end">github.com/Yoshiki0705</text>
+  <text x="1200" y="600" fill="#8A8F94" font-size="24" font-weight="500" text-anchor="end">github.com/Yoshiki0705</text>
 </svg>
