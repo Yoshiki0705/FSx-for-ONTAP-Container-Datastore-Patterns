@@ -2,6 +2,8 @@
 
 🌐 [English](README.en.md) | 📚 Hub: [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook)
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Yoshiki0705/FSx-for-ONTAP-Container-Datastore-Patterns/badge)](https://scorecard.dev/viewer/?uri=github.com/Yoshiki0705/FSx-for-ONTAP-Container-Datastore-Patterns)
+
 Amazon FSx for NetApp ONTAP を、Amazon ECS / Amazon EKS 上のコンテナのデータ領域として使うための構成パターンと CloudFormation テンプレート集です。AWS Transform のコンテナ化でモダナイズしたワークロードを含みます。
 
 ## TL;DR
