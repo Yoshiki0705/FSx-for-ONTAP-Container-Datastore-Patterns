@@ -206,6 +206,58 @@ D フェーズ(本リポジトリでは文献調査)の結論として、コン�
 
 ---
 
+## 9. サードパーティツールによる VM → EC2 移行(NetApp Shift Toolkit v8.0)
+
+ここまでの 1〜8 章は AWS Transform を軸にした経路である。VMware VM を AWS 上に運び、その
+データ領域を FSx for ONTAP に載せる経路は、AWS Transform / MGN のほかに **NetApp Shift
+Toolkit** でも成立する。本リポジトリの主題(コンテナのデータストア)に対しては、これは
+「移行の入口」を提供し、着地した FSx for ONTAP へ後からコンテナが到達する 2 段階の前段に
+あたる。
+
+### 9.1 Shift Toolkit の位置づけ [文書]
+
+Shift Toolkit はハイパーバイザ間の VM 移行とディスク変換を行うスタンドアロン製品で、
+FlexClone による高速変換を特徴とする(出典: [Shift Toolkit overview](https://docs.netapp.com/us-en/netapp-solutions/vm-migrate/migrate-overview.html))。
+従来の変換先は VMware ESXi ⇄ Microsoft Hyper-V、ESXi → OLVM / Red Hat OpenShift
+Virtualization / Proxmox VE で、**この overview の版には AWS / EC2 が着地先として現れない**。
+AWS 対応は次の v8.0 で preview 機能として加わった。
+
+### 9.2 v8.0 の AWS 対応(Early Preview)[文書][Preview]
+
+Shift Toolkit v8.0 は preview 機能として AWS への移行を導入した(出典: [What's New in Shift v8.0(NetApp Community)](https://community.netapp.com/community/discussion/467669/what-s-new-in-shift-v8-0-file-to-lun-ec2-fsx-for-ontap-trident-integration-more))。
+
+| 機能 | 内容 | 成熟度 |
+|---|---|---|
+| EC2 with FSx for ONTAP Support | VM の **OS ディスクを EBS 形式**へ、**データディスクを FSx for ONTAP** へ変換して EC2 へ移行。ONTAP snapshot / SnapMirror / FSx for ONTAP を用い、従来のコピー処理を排する。OS ディスク変換は AWS Import/Export API と Direct Access API(EBS snapshot 作成)の 2 経路 | Early Preview |
+| File-to-LUN migration | FlexVol 上の既存ファイル(VMDK 等)を **block(iSCSI LUN)へ直接変換**。データレイアウトを保持 | Preview |
+| Shift as an Add-On for Trident | Trident 26.06 以降で、OpenShift Virtualization 向けに CSI プロビジョナと統合。zero-copy cold migration | Preview |
+
+**Early Preview の制約(明示が必要)**: EC2 をターゲットとして有効化するには、本調査時点
+(2026-09-23)で NetApp サポート窓口への連絡が必要と記事に明記されている。GA の AWS Transform /
+MGN とは成熟度が異なるため、設計の前提に据える場合はこの差を明記する。
+
+### 9.3 コンテナのデータストアとの接続(2 段階移行)[文書]
+
+Shift Toolkit v8.0 で VM を EC2 + FSx for ONTAP へ運ぶと、データは FSx for ONTAP の
+ボリューム / LUN に載る。この同一データに、後からコンテナ側(EKS の Trident PV、ECS の
+EC2 ホスト経由 NFS)が **iSCSI または NFS** で到達できる。ONTAP のマルチプロトコル特性により、
+同一ボリュームへ複数プロトコルでアクセスでき、プロトコル切替時のデータ移行を要しない
+(1〜8 章の Trident / host NFS 経路がそのまま適用される)。v8.0 の file-to-LUN 機能は、
+ファイルとして移行したものをブロックへ切り替える具体例にあたる。
+
+到達形態と Fargate の制約(4 章)は移行の入口が AWS Transform か Shift Toolkit かに依らず
+同じである。すなわち Fargate では FSx for ONTAP を PV / データ領域に使えず、EC2 ワーカー /
+EC2 起動タイプを選ぶ、というトレードオフはこの経路でも変わらない。
+
+### 9.4 未確認事項(9 章)
+
+| # | 項目 | 調査した範囲(2026-09-23) |
+|---|---|---|
+| C5 | v8.0 AWS 対応の GA 時期と一般提供条件 | community 記事で Early Preview と確認。GA 時期・サポート連絡なしで使える条件は記事に記載なし |
+| C6 | EC2 移行後のデータディスク(FSx for ONTAP)へのコンテナ到達の実機挙動 | 本リポジトリでは未実施。ONTAP マルチプロトコルと Trident の一般特性からの推定 |
+
+---
+
 ## 参考リンク
 
 - [AWS Transform adds containerization capability during migrations(What's New, 2026-05-11)](https://aws.amazon.com/about-aws/whats-new/2026/05/aws-transform-containerization/)
@@ -224,3 +276,5 @@ D フェーズ(本リポジトリでは文献調査)の結論として、コン�
 - [Simplify compute management with AWS Fargate(EKS)](https://docs.aws.amazon.com/eks/latest/userguide/fargate.html)
 - [AWS Transform の FSx for ONTAP 対応 GA 検証(別リポジトリ VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/ja/atx-fsxn-ga-verification.md)
 - [手順: AWS Transform による VMware → EC2 / FSx for ONTAP 移行(別リポジトリ)](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/ja/aws-transform-migration-procedure.md)
+- [NetApp Shift Toolkit overview(ハイパーバイザ間移行)](https://docs.netapp.com/us-en/netapp-solutions/vm-migrate/migrate-overview.html)
+- [What's New in Shift v8.0: File-to-LUN, EC2 + FSx for ONTAP, Trident(NetApp Community)](https://community.netapp.com/community/discussion/467669/what-s-new-in-shift-v8-0-file-to-lun-ec2-fsx-for-ontap-trident-integration-more)
