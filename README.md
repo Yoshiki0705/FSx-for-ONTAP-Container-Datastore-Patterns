@@ -26,7 +26,7 @@ Amazon FSx for NetApp ONTAP を、Amazon ECS / Amazon EKS 上のコンテナの�
 
 **.NET のモダナイズはソースコードから可能** [文書]。AWS Transform は .NET Framework 3.5 / .NET Core 3.1〜.NET 10 を .NET 8 / .NET 10 へ変換し、クロスプラットフォーム化して Linux コンテナにできます(C# / VB.NET(プレビュー)、ASP.NET MVC / Web API / Web Forms など)。WinForms / WPF / Xamarin はプレビュー、Blazor UI や互換ライブラリの無い Win32 DLL は変換対象外(2026-09 時点)。対象の詳細は[派生ドキュメント](docs/ja/atx-containerization-fsxn-derivation.md)を参照してください。
 
-**ONTAP のマルチプロトコル特性が 3 経路に共通する利点** [文書]。同一ボリュームに NFS / SMB / S3 でアクセスでき、プロトコルを切り替えてもデータ移行は要りません。リホスト後に EC2 が使っていたデータへ、コンテナ側が別プロトコルで到達する 2 段階の構成が成り立ちます。Shift Toolkit v8.0 の file-to-LUN(ファイルをブロックへ直接変換)はその具体例です。詳細と出典は[派生ドキュメント](docs/ja/atx-containerization-fsxn-derivation.md)の 9 章にあります。
+**ONTAP のマルチプロトコル特性が 3 経路に共通する利点** [文書]。同一ボリュームに NFS / SMB / S3 でアクセスでき、プロトコルを切り替えてもデータ移行は要りません。リホスト後に EC2 が使っていたデータへ、コンテナ側が別プロトコルで到達する 2 段階の構成が成り立ちます。Shift Toolkit v8.0 の file-to-LUN(ファイルをブロックへ直接変換)はその具体例で、移行はファイルで高並列に運び、運用は単一ライター前提のブロック性能を取る、といった切り替えに使えます。動機・ユースケースと出典は[派生ドキュメント](docs/ja/atx-containerization-fsxn-derivation.md)の 9 章にあります。
 
 > **成熟度に関する補足**: Shift Toolkit v8.0 の EC2 対応は 2026-09 時点で Early Preview で、EC2 をターゲットにするには NetApp サポートへの連絡が必要です。GA の AWS Transform / MGN とは成熟度が異なるため、設計の前提に据える場合はこの差を明示してください。
 

@@ -236,6 +236,33 @@ Shift Toolkit v8.0 introduced migration to AWS as a preview feature (source: [Wh
 as a target requires contacting NetApp support, per the article. Its maturity differs from the
 GA AWS Transform / MGN, so state this difference when relying on it in a design.
 
+#### Why switch from file to block (iSCSI LUN)
+
+The article describes file-to-LUN as seamlessly moving data from file-based storage to block
+(iSCSI LUN) while preserving data layout [Documented]. The motivation it gives is migration
+speed and parallelism: moving from a block-backed hypervisor via direct copy or VDDK is slow,
+so you storage-vMotion into an ONTAP NFS datastore first and then convert into the target's
+block storage (the article's example is OpenShift Virtualization) with **high parallelism**
+[Documented]. Entering migration as a file moves fast and flexibly; landing as block matches
+the next operational requirement — that is the switch.
+
+The following are not enumerated in the article; they are general motivations derived from the
+ONTAP block / file split (section 5) [Documented, general reasoning].
+
+- **File for migration, block for operation**: run the migration phase over NFS (file) for high
+  parallelism and low operational cost, then take iSCSI LUN (block) in the operational phase for
+  single-writer performance or a dedicated disk.
+- **Workloads that require block**: database data areas, middleware that assumes a raw block
+  device, dedicated volumes per StatefulSet replica, and workloads demanding dedicated IOPS —
+  each suits block (mostly RWO) rather than a file share (RWX) (consistent with section 5).
+- **Targets that treat VM disks as block**: OpenShift Virtualization / KubeVirt commonly handle
+  VM disks as block PVCs, creating demand to convert a disk moved as a file into a block LUN on
+  landing.
+
+The use cases are shown as types, not specific customer cases. Because file-to-LUN is a preview
+feature, confirming its hands-on behavior and the workloads it fits requires hands-on
+verification (C5 / C6 in 9.4).
+
 ### 9.3 Connecting to the container data store (two-stage migration) [Documented]
 
 Moving a VM to EC2 + FSx for ONTAP with Shift Toolkit v8.0 places the data on an FSx for ONTAP
