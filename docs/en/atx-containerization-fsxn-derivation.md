@@ -124,6 +124,12 @@ Source: [ONTAP SAN driver overview](https://docs.netapp.com/us-en/trident/triden
 - SMB volumes are supported only with the `ontap-nas` driver, only on Windows nodes, and not with the Trident EKS add-on.
 - NVMe-oF is not among the tested targets in Trident 25.02 [Documented].
 
+**General ONTAP knowledge lives in the hub**: the three items below are common across containers, so this repository does not duplicate them; they live in the block-storage domain of the hub ([FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook)).
+
+- Block PV volume limit: [Kubernetes block volumes and the volume limit](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/en/domains/block-storage/notes/kubernetes-block-volumes-and-the-volume-limit.md)
+- Multipath (failover): [Paths are the failover mechanism](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/en/domains/block-storage/notes/paths-are-the-failover-mechanism.md)
+- Driver / protocol choice: [Protocol choice is bounded before you choose](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/en/domains/block-storage/notes/protocol-choice-is-bounded-before-you-choose.md)
+
 ### 4.2 Integration on ECS (EC2 launch type) [Documented]
 
 The procedure for using FSx for ONTAP from ECS is documented assuming the **EC2 launch type** (source: [Using Amazon Elastic Container Service with FSx for ONTAP](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/mount-ontap-ecs-containers.html)).

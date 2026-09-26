@@ -124,6 +124,12 @@ Trident は EKS クラスタに対して**ブロックとファイルの両方�
 - SMB ボリュームは `ontap-nas` ドライバのみ、Windows ノードのみで、Trident EKS アドオンでは非対応。
 - NVMe-oF は Trident 25.02 のテスト対象に含まれていない [文書]。
 
+**一般 ONTAP 知見は Hub 参照**: 以下 3 点はコンテナ横断で共通するため本リポジトリでは複製せず、Hub([FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook))の block-storage domain に委ねる。
+
+- ブロック PV のボリューム上限: [Kubernetes のブロックボリュームとボリューム上限](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/block-storage/notes/kubernetes-block-volumes-and-the-volume-limit.md)
+- マルチパス(フェイルオーバー): [パスがフェイルオーバーの機構](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/block-storage/notes/paths-are-the-failover-mechanism.md)
+- ドライバ / プロトコル選択: [プロトコル選択は選ぶ前に定まっている](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/block-storage/notes/protocol-choice-is-bounded-before-you-choose.md)
+
 ### 4.2 ECS における連携(EC2 起動タイプ) [文書]
 
 ECS から FSx for ONTAP を使う手順は、**EC2 起動タイプ**を前提に文書化されている(出典: [Using Amazon Elastic Container Service with FSx for ONTAP](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/mount-ontap-ecs-containers.html))。
