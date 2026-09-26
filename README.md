@@ -45,7 +45,7 @@ Fargate はボリュームマウントで FSx for ONTAP を使えないため、
 ## ドキュメント
 
 - [コンテナ化への派生と FSx for ONTAP の連携可否](docs/ja/atx-containerization-fsxn-derivation.md)
-- [コンテナ移行先での FSx for ONTAP データストア構成の検証](docs/ja/atx-containerization-fsxn-storage-verification.md)
+- [コンテナ移行先での FSx for ONTAP データストア構成の検証](docs/ja/atx-containerization-fsxn-storage-verification.md) — 実機デプロイの前提・順序・落とし穴・後始末は [7.1 デプロイ準備](docs/ja/atx-containerization-fsxn-storage-verification.md#71-デプロイ準備実機検証の前段)
 - [ECS on EC2 における FSx for ONTAP のマウント](docs/ja/ecs-ec2-fsxn-mount.md)
 
 ## ゲート
