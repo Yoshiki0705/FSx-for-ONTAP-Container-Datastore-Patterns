@@ -130,6 +130,36 @@ Confirmed that `make cfn-lint` (cfn-lint, `templates/*.yaml`) passes with exit 0
 | V4 | Mapping of the S3 access point UNIX user to ONTAP-side permissions | Permission design to confirm on real hardware [Unverified] |
 | V5 | Effective throughput via the S3 access point | Docs state "depends on the file system's provisioned throughput". Not measured [Unverified] |
 
+### 7.1 Deployment prerequisites (the stage before hands-on verification)
+
+Before confirming V1–V5 on real infrastructure, these are the prerequisites, order, pitfalls, and cleanup, framed to prevent rework. Real deployment incurs charges and changes a shared account, so obtain per-action approval when starting it.
+
+**Prerequisite: FSx for ONTAP is outside this repository's templates** [Verified]. None of the five templates create `AWS::FSx::FileSystem` / `StorageVirtualMachine` / `Volume`; they reference an existing FSx for ONTAP. As stage 0 of deployment, provision the file system + SVM + volume first, and record the SVM NFS endpoint, the volume junction path, and the file system security group ID (passed to config 1's `FsxnSvmNfsEndpoint` / `FsxnVolumeJunctionPath` / `FsxnSecurityGroupId`).
+
+**Confirmed design decisions (do not undo on real infra)**:
+
+- NFS explicitly uses `nfsvers=4.1`, which completes over the single port 2049 [Verified]. Ingress on 2049 only is correct. 111 / 635 / 4045-4049 are for NFSv3 and are not needed here.
+- The S3 Access Point policy circular reference is already avoided by setting the Principal to the account root and scoping on the role's identity policy (5.2).
+
+**Items to confirm before starting (mapped to the V numbers)**:
+
+| Preparation | Related unverified item | How to confirm |
+|---|---|---|
+| Current Trident EKS add-on name / version | V2 | `aws eks describe-addon-versions --addon-name netapp_trident-operator`. Docs are now on the Trident 25.10 line, ahead of this memo's 25.02 reference [Documented] |
+| S3 Access Point dual-layer authorization (IAM + file-system-level UNIX / Windows user) | V4 | Design the mapping between the access point's UNIX user and the ONTAP file permissions on real infra [Documented] |
+| Availability in the target region | V1 in general | Second-generation FSx for ONTAP expanded to four regions + GovCloud in 2026-04. S3 Access Points support Tokyo (ap-northeast-1) [Documented]. Confirm availability in the region you use |
+| IRSA trust condition (EKS Fargate) | V3 | Add `sub` / `aud` to the trust policy manually after cluster creation (5.2). Do not leave it unset on a shared account |
+
+**Recommended deployment order**: start with the smallest, config 1 (ECS on EC2 + NFS — CloudFormation-complete, no Trident, no S3 Access Points). Once the data path is confirmed (read/write to `/data` from a task), delete it, then proceed step by step to config 2 (apply Trident's Kubernetes objects via kubectl / Helm) and configs 3 / 4 (S3 Access Points, with the manual IRSA step).
+
+**Pitfalls (the kind that force rework on real infra)**:
+
+- The mount is an instance boot-time step, not something a task creates. If a task starts before the mount is present, the bind-mount target is empty (already noted in 3.2). Treat the mount as a precondition of startup.
+- When using `ontap-san` (iSCSI) alongside the Amazon EBS CSI driver, blacklist EBS devices in `multipath.conf` or the node multipath will claim EBS (already noted in 4.2).
+- Trident's StorageClass / PVC / TridentBackendConfig cannot be created by CloudFormation; apply them with kubectl / Helm after the stack completes (already noted in 4.2).
+
+**Cleanup (a verification environment is exactly where you must delete)**: the main resources that keep charging are the FSx for ONTAP file system (hourly for SSD capacity + provisioned throughput), the EKS cluster, EC2 nodes / container instances, and NAT / VPC endpoints. After verification, delete the stack, and do not forget the FSx for ONTAP created outside the templates. A verification resource you cannot delete becomes a long-running charge and blocks operations on resources beside it.
+
 ---
 
 ## 8. The Split Decision
