@@ -162,7 +162,7 @@ FSx for ONTAP のブロック(iSCSI LUN)利用について、想定どおりデ�
 | ブロック / iSCSI(RWO) | データベースのデータ領域、単一ライターの永続化、専用 IOPS を要求するワークロード、raw ブロックデバイスを前提とするミドルウェア、StatefulSet の各レプリカ専用ボリューム | 「非共有ストレージは block / iSCSI ドライバ」([Integrate Trident](https://docs.netapp.com/us-en/trident/trident-reco/integrate-trident.html))。ブロックストレージは一般に RWO で単一ノード書き込み向き |
 | ファイル / NFS(RWX) | 複数 Pod で共有するコンテンツ管理、メディア処理、Web 配信、水平スケールするアプリの共有データ | 「共有ストレージ(複数 Pod が同一 PVC)は NAS ドライバ」(同上)。EC2 リホストではなくコンテナ化後に共有領域が要る場合に該当 |
 
-**EC2 リホスト経路との違い**: MGN 経由の EC2 リホストでは、データディスクは FlexVol 内の LUN として配置され、ゲスト OS からは iSCSI(DM-Multipath / ALUA)で見える(出典: [AWS Transform の FSx for ONTAP 対応 GA 検証(別リポジトリ)](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/ja/atx-fsxn-ga-verification.md))。これはコンテナ環境の PV とは別の到達形態である。コンテナ環境では PV/PVC/StorageClass の抽象を通して Trident が LUN またはボリュームを払い出す。EC2 リホスト経路の検証は別リポジトリ [VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap) にある。
+**EC2 リホスト経路との違い**: MGN 経由の EC2 リホストでは、データディスクは FlexVol 内の LUN として配置され、ゲスト OS からは iSCSI(DM-Multipath / ALUA)で見える(出典: [AWS Transform の FSx for ONTAP 対応 GA 検証(別リポジトリ)](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/ja/atx-fsxn-ga-verification.md))。これはコンテナ環境の PV とは別の到達形態である。コンテナ環境では PV/PVC/StorageClass の抽象を通して Trident が LUN またはボリュームを払い出す。EC2 リホスト経路の検証は別リポジトリ [VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP) にある。
 
 ---
 
@@ -305,7 +305,7 @@ EC2 起動タイプを選ぶ、というトレードオフはこの経路でも�
 - [Using Amazon Elastic Container Service with FSx for ONTAP](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/mount-ontap-ecs-containers.html)
 - [Amazon ECS task definition differences for Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html)
 - [Simplify compute management with AWS Fargate(EKS)](https://docs.aws.amazon.com/eks/latest/userguide/fargate.html)
-- [AWS Transform の FSx for ONTAP 対応 GA 検証(別リポジトリ VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/ja/atx-fsxn-ga-verification.md)
-- [手順: AWS Transform による VMware → EC2 / FSx for ONTAP 移行(別リポジトリ)](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/ja/aws-transform-migration-procedure.md)
+- [AWS Transform の FSx for ONTAP 対応 GA 検証(別リポジトリ VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/ja/atx-fsxn-ga-verification.md)
+- [手順: AWS Transform による VMware → EC2 / FSx for ONTAP 移行(別リポジトリ)](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/ja/aws-transform-migration-procedure.md)
 - [NetApp Shift Toolkit overview(ハイパーバイザ間移行)](https://docs.netapp.com/us-en/netapp-solutions/vm-migrate/migrate-overview.html)
 - [What's New in Shift v8.0: File-to-LUN, EC2 + FSx for ONTAP, Trident(NetApp Community)](https://community.netapp.com/community/discussion/467669/what-s-new-in-shift-v8-0-file-to-lun-ec2-fsx-for-ontap-trident-integration-more)

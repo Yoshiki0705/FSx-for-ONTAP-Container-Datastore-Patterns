@@ -58,4 +58,4 @@ make ci        # cfn-lint + headings + role-labels
 ## 関連リポジトリ
 
 - Hub: [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook) — FSx for ONTAP の設計・構築・運用知見
-- [VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap) — VMware → EC2 + FSx for ONTAP リホスト移行の検証。SMB 構成が参照する AD はこちらで用意できます
+- [VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP) — VMware → EC2 + FSx for ONTAP リホスト移行の検証。SMB 構成が参照する AD はこちらで用意できます
