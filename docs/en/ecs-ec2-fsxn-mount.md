@@ -75,7 +75,7 @@ sudo mount -t nfs -o nfsvers=4.1 svm-dns-name:/volume-junction-path /fsxontap
 ### 3.6 Authentication and permissions [Documented + Unverified]
 
 - Linux + NFS: because the host mounts over NFS, file access follows the host UID/GID and the ONTAP export policy. The task role (IAM) is not involved in the mount itself.
-- Windows + SMB: the SVM joins Active Directory and SMB authentication uses AD credentials. For AD-join prerequisites, see the [AD integration procedure](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/en/ad-integration-for-migration.md) in the separate repository.
+- Windows + SMB: the SVM joins Active Directory and SMB authentication uses AD credentials. For AD-join prerequisites, see the [AD integration procedure](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/en/ad-integration-for-migration.md) in the separate repository.
 - The concrete mapping of NFS UID/GID to ONTAP-side permissions needs hands-on confirmation [Unverified].
 
 ### 3.7 Relationship with the ECS daemon mechanisms [Documented]
@@ -189,4 +189,4 @@ This session does not perform hands-on verification. Here is the design of the s
 - [Deploy Trident for Docker](https://docs.netapp.com/us-en/trident/trident-docker/deploy-docker.html)
 - [Trident Requirements (supported frontends / backends)](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html)
 - [Verifying FSx for ONTAP Data Store Configurations on Container Targets (this repository)](atx-containerization-fsxn-storage-verification.md)
-- [AD integration procedure (separate repository VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/en/ad-integration-for-migration.md)
+- [AD integration procedure (separate repository VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/en/ad-integration-for-migration.md)

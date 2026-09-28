@@ -75,7 +75,7 @@ sudo mount -t nfs -o nfsvers=4.1 svm-dns-name:/volume-junction-path /fsxontap
 ### 3.6 認証と権限 [文書 + 未確認]
 
 - Linux + NFS: ホストが NFS でマウントするため、ファイルアクセスはホストの UID/GID と ONTAP のエクスポートポリシーに従う。タスクロール(IAM)はマウント自体には関与しない。
-- Windows + SMB: SVM が Active Directory に参加し、SMB 認証は AD 資格情報で行う。AD 参加の前提は別リポジトリの [AD 統合の手順](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/ja/ad-integration-for-migration.md) を参照。
+- Windows + SMB: SVM が Active Directory に参加し、SMB 認証は AD 資格情報で行う。AD 参加の前提は別リポジトリの [AD 統合の手順](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/ja/ad-integration-for-migration.md) を参照。
 - NFS の UID/GID マッピングと ONTAP 側権限の具体的な対応は、実機で確認する必要がある [未確認]。
 
 ### 3.7 ECS のデーモン機構との関係 [文書]
@@ -189,4 +189,4 @@ Trident の backend として FSx for ONTAP はサポート対象に挙がって
 - [Deploy Trident for Docker](https://docs.netapp.com/us-en/trident/trident-docker/deploy-docker.html)
 - [Trident Requirements(supported frontends / backends)](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html)
 - [コンテナ移行先での FSx for ONTAP データストア構成の検証(本リポジトリ)](atx-containerization-fsxn-storage-verification.md)
-- [AD 統合の手順(別リポジトリ VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap/blob/main/docs/ja/ad-integration-for-migration.md)
+- [AD 統合の手順(別リポジトリ VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/ja/ad-integration-for-migration.md)

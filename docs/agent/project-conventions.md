@@ -44,7 +44,7 @@ data-store patterns.
 
 The VMware ESXi to Amazon EC2 + FSx for ONTAP rehost migration verification
 (NetApp Shift Toolkit, AWS Transform for migrations, AD integration) lives in
-[VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap).
+[VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP).
 The SMB CloudFormation here references an existing directory (`DirectoryId`); set
 up the Active Directory side there or with an AWS Managed Microsoft AD.
 

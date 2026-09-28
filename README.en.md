@@ -58,4 +58,4 @@ make ci        # cfn-lint + headings + role-labels
 ## Related Repositories
 
 - Hub: [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook) — design, build, and operations knowledge for FSx for ONTAP
-- [VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/vmware-migration-ec2-ontap) — VMware → EC2 + FSx for ONTAP rehost migration verification. The AD that the SMB configuration references can be set up there
+- [VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP) — VMware → EC2 + FSx for ONTAP rehost migration verification. The AD that the SMB configuration references can be set up there
