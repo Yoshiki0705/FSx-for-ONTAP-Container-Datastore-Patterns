@@ -51,9 +51,10 @@ role-labels: ## ラベルが職種名を名乗っていないか（所見では�
 	$(PYTHON) tools/check_role_labels.py
 
 .PHONY: ai-style
-ai-style: ## AI 調の兆候を数える（報告のみ。--fail なしで常に exit 0）
+ai-style: ## AI 調の兆候を検査（fail tier で落とす。先に件数表を出す）
 	@$(PYTHON) $(AI_STYLE_CHECK) --selftest >/dev/null
-	$(PYTHON) $(AI_STYLE_CHECK) $(AI_STYLE_PATHS) --summary
+	@$(PYTHON) $(AI_STYLE_CHECK) $(AI_STYLE_PATHS) --summary
+	$(PYTHON) $(AI_STYLE_CHECK) $(AI_STYLE_PATHS) --fail
 
 .PHONY: test
 test: ## ai-style 検出器の stdlib unittest

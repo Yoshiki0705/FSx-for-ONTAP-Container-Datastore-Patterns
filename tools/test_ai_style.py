@@ -189,6 +189,25 @@ class CopyableCli(unittest.TestCase):
             note.write_text(RENDERED, encoding="utf-8")
             self.assertEqual(self.run_cli(name, "--fail").returncode, 0)
 
+    def test_the_corpus_passes_fail_and_a_bracketed_bold_breaks_it(self) -> None:
+        """The gate `make ai-style` now runs `--fail` over AI_STYLE_PATHS.
+
+        Assert what that target asserts: the real corpus has no fail-tier finding, and injecting a
+        bracketed-bold D1 line into a copy of a corpus file makes `--fail` exit 1. The copy keeps
+        the negative control out of the tracked tree.
+        """
+        paths = ["AGENTS.md", "README.md", "README.en.md", "docs"]
+        self.assertEqual(self.run_cli(*paths, "--fail").returncode, 0)
+        with tempfile.TemporaryDirectory() as name:
+            target = Path(name) / "docs" / "ja"
+            target.mkdir(parents=True)
+            source = ROOT / "docs" / "ja" / "ecs-ec2-fsxn-mount.md"
+            injected = target / "ecs-ec2-fsxn-mount.md"
+            injected.write_text(
+                source.read_text(encoding="utf-8") + "\n" + BROKEN, encoding="utf-8"
+            )
+            self.assertEqual(self.run_cli(str(injected), "--fail").returncode, 1)
+
     def test_markers_exclude_and_summary(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
