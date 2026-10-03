@@ -86,16 +86,20 @@ AWS Transform がコンテナ化アプリを ECS へデプロイするための 
 
 以下は 2 点の具体的な問いに一次情報で答える。出典は launch ブログ [Containerize during migration](https://aws.amazon.com/blogs/migration-and-modernization/containerize-during-migration-replatform-applications-to-containers-with-aws-transform/) と 3.1〜3.4 の各ドキュメント。
 
-**Q1: ソースコード以外(VMware VM や実行中の Windows/.NET ワークロード)を入力にコンテナ化できるか。**
+#### Q1. ソースコード以外を入力にできるかの可否
+
+問い: ソースコード以外(VMware VM や実行中の Windows/.NET ワークロード)を入力にコンテナ化できるか。
 
 できない。入力は常に**ソースコード**(CodeConnections 経由の Git リポジトリまたは zip)である [文書]。VMware VM や実行中サーバーを直接コンテナ化する経路は、AWS Transform のコンテナ化には無い。
 
 - end-to-end 移行では、**リホスト(EC2)と コンテナ化(ソースコード)が並行する 2 トラック**として実行される。同一プロジェクトで「rehost する VM」と「replatform するソースコード」を横並びに扱うが、VMware VM がコンテナ化トラックに入るわけではない [文書]。
 - Windows / .NET のワークロードも、コンテナ化に渡すのはソースコードである。.NET Framework の場合は 3.2 の範囲でクロスプラットフォーム .NET へ移行したうえでコンテナ化する流れになる。**実行中サーバーやバイナリからのコンテナ化(ソースコード不要の経路)は AWS Transform のコンテナ化ではなく、別ツールである AWS App2Container の領域**で、App2Container は「アプリのコンテナ化にソースコードを必要としない」と明記している [文書](出典: [What is AWS App2Container?](https://docs.aws.amazon.com/app2container/latest/UserGuide/what-is-a2c.html))。両者は入力が異なる別機能である。
 
-**Q2: ECS 化時に NFS/SMB マウントポイントを、EKS 化時に FSx for ONTAP を PV として指定できるか(生成物の中で)。**
+#### Q2. 生成物内でのマウント / PV 指定の可否
 
-**本調査時点(2026-09-22)で、AWS Transform が自動生成する成果物にその構成は確認できなかった [未確認]。** launch ブログが例示する ECS 生成物は、ECS クラスタ(Fargate)+ Application Load Balancer + Secrets Manager プレースホルダ + CloudWatch ロググループであり、NFS/SMB マウントポイントや永続ボリュームは含まれていない。EKS 生成物は Helm チャートで、**既存の EKS クラスタを要求する**とされ、PV/StorageClass の自動生成には言及がない。
+問い: ECS 化時に NFS/SMB マウントポイントを、EKS 化時に FSx for ONTAP を PV として指定できるか(生成物の中で)。
+
+本調査時点(2026-09-22)で、AWS Transform が自動生成する成果物にその構成は確認できなかった [未確認]。launch ブログが例示する ECS 生成物は、ECS クラスタ(Fargate)+ Application Load Balancer + Secrets Manager プレースホルダ + CloudWatch ロググループであり、NFS/SMB マウントポイントや永続ボリュームは含まれていない。EKS 生成物は Helm チャートで、**既存の EKS クラスタを要求する**とされ、PV/StorageClass の自動生成には言及がない。
 
 したがって、NFS/SMB マウント(ECS)や FSx for ONTAP を PV に指定(EKS)する構成は、コンテナ化の生成物の外側で、デプロイ先クラスタ側に別途組み込む必要がある(4 章)。生成物はチャットで調整できると記載があるため、テンプレートを人手で拡張する余地はあるが、**「FSx for ONTAP を PV に指定する既定の生成物がある」わけではない**。
 

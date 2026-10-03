@@ -86,16 +86,20 @@ The containerization workflow has nine steps (review security disclaimer → clo
 
 The following answers two specific questions from primary sources. Sources are the launch blog [Containerize during migration](https://aws.amazon.com/blogs/migration-and-modernization/containerize-during-migration-replatform-applications-to-containers-with-aws-transform/) and the documents in 3.1–3.4.
 
-**Q1: Can input other than source code (a VMware VM or a running Windows/.NET workload) be containerized?**
+#### Q1. Whether input other than source code is accepted
+
+Question: can input other than source code (a VMware VM or a running Windows/.NET workload) be containerized?
 
 No. The input is always **source code** (a Git repository via CodeConnections or a zip) [Documented]. There is no path in AWS Transform containerization to containerize a VMware VM or a running server directly.
 
 - In an end-to-end migration, **rehost (EC2) and containerize (source code) run as two parallel tracks**. A single project handles "VMs to rehost" and "source code to replatform" side by side, but a VMware VM does not enter the containerization track [Documented].
 - Windows / .NET workloads also feed source code into containerization. For .NET Framework, the flow is to move to cross-platform .NET within the 3.2 scope and then containerize. **Containerization from a running server or binaries (a source-code-free path) is not AWS Transform containerization but the domain of the separate AWS App2Container tool**, which states that it "does not need source code for the application to containerize it" [Documented] (source: [What is AWS App2Container?](https://docs.aws.amazon.com/app2container/latest/UserGuide/what-is-a2c.html)). The two are separate features with different inputs.
 
-**Q2: When containerizing to ECS can it specify an NFS/SMB mount point, and to EKS can it specify FSx for ONTAP as a PV (within the generated artifacts)?**
+#### Q2. Whether the generated artifacts specify a mount or PV
 
-**As of this research (2026-09-22), that configuration was not found in the artifacts AWS Transform auto-generates [Unverified].** The ECS artifacts the launch blog illustrates are an ECS cluster (Fargate) + Application Load Balancer + Secrets Manager placeholders + CloudWatch log group; no NFS/SMB mount point or persistent volume is included. The EKS artifacts are Helm charts, stated to **require an existing EKS cluster**, with no mention of auto-generating a PV / StorageClass.
+Question: when containerizing to ECS can it specify an NFS/SMB mount point, and to EKS can it specify FSx for ONTAP as a PV (within the generated artifacts)?
+
+As of this research (2026-09-22), that configuration was not found in the artifacts AWS Transform auto-generates [Unverified]. The ECS artifacts the launch blog illustrates are an ECS cluster (Fargate) + Application Load Balancer + Secrets Manager placeholders + CloudWatch log group; no NFS/SMB mount point or persistent volume is included. The EKS artifacts are Helm charts, stated to **require an existing EKS cluster**, with no mention of auto-generating a PV / StorageClass.
 
 Therefore an NFS/SMB mount (ECS) or specifying FSx for ONTAP as a PV (EKS) must be built into the destination cluster separately, outside the containerization artifacts (Section 4). The artifacts can be adjusted via chat, so there is room to extend the templates by hand, but **there is no default artifact that specifies FSx for ONTAP as a PV**.
 
