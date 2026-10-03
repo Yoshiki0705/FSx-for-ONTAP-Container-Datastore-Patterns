@@ -82,8 +82,10 @@ sudo mount -t nfs -o nfsvers=4.1 svm-dns-name:/volume-junction-path /fsxontap
 
 前回の議論の接続として、ECS でホスト単位に常駐タスクを置く仕組みは 2 つある。
 
-- **daemon スケジューリング戦略**: サービスの `schedulingStrategy: DAEMON`。EC2 起動タイプで各コンテナインスタンスに 1 タスクを配置する。
-- **ECS Managed Daemons**: Amazon ECS Managed Instances のキャパシティプロバイダの各 EC2 に 1 デーモンタスクを配置・管理する新機能。ログ・トレース・セキュリティエージェントを想定(出典: [Amazon ECS Managed Daemons](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/managed-daemons.html))。
+| 仕組み | 内容 |
+|---|---|
+| daemon スケジューリング戦略 | サービスの `schedulingStrategy: DAEMON`。EC2 起動タイプで各コンテナインスタンスに 1 タスクを配置する |
+| ECS Managed Daemons | Amazon ECS Managed Instances のキャパシティプロバイダの各 EC2 に 1 デーモンタスクを配置・管理する新機能。ログ・トレース・セキュリティエージェントを想定(出典: [Amazon ECS Managed Daemons](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/managed-daemons.html)) |
 
 どちらも「ECS タスクを各インスタンスに配る」仕組みであって、Kubernetes の CSI ランタイムを提供するものではない。NFS/SMB ホストマウント方式(3.1〜3.3)はデーモン機構を必要としない。マウントはインスタンスの起動処理で足りる。
 
@@ -99,7 +101,7 @@ sudo mount -t nfs -o nfsvers=4.1 svm-dns-name:/volume-junction-path /fsxontap
 
 ### 4.1 Trident for Docker の存在 [文書]
 
-Trident は Kubernetes の CSI ドライバとしてだけでなく、**Docker ボリュームプラグイン**としても提供されている(出典: [Deploy Trident for Docker](https://docs.netapp.com/us-en/trident/trident-docker/deploy-docker.html))。Kubernetes に依存しない。要件ドキュメントの一節がこの性質を述べている: Trident はコンテナで動く一プロセスであり、どの Linux ワーカーでも動く。ボリュームの実マウントはワーカー側の標準 NFS クライアント / iSCSI イニシエータが担う(出典: [Requirements](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html))。
+Trident は **Docker ボリュームプラグイン**として提供されており、Kubernetes の CSI ドライバとしての提供と並ぶ(出典: [Deploy Trident for Docker](https://docs.netapp.com/us-en/trident/trident-docker/deploy-docker.html))。Kubernetes に依存しない。要件ドキュメントの一節がこの性質を述べている: Trident はコンテナで動く一プロセスであり、どの Linux ワーカーでも動く。ボリュームの実マウントはワーカー側の標準 NFS クライアント / iSCSI イニシエータが担う(出典: [Requirements](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html))。
 
 Docker マネージドプラグイン方式の要点:
 

@@ -138,7 +138,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 
 **確認済みの設計判断(実機で崩さない)**:
 
-- NFS は `nfsvers=4.1` を明示しており、v4.1 は 2049 単一ポートで完結する [実測]。ingress 2049 のみで正しい。111 / 635 / 4045-4049 は NFSv3 用で本構成には不要。
+- 構成 1 のテンプレートは NFS マウントに `nfsvers=4.1` を明示している [実測]。NFSv4.1 が 2049 単一ポートで完結し、111 / 635 / 4045-4049 は NFSv3 用で v4.1 のみなら不要であることは AWS ドキュメントの記載であり、本リポジトリでの ingress 疎通としては未検証 [文書](出典: [Use NFS to mount FSx for ONTAP volume on Linux instance](https://repost.aws/knowledge-center/ec2-mount-fsx-ontap-nfs))。したがってテンプレートの ingress を 2049 のみとする設計は v4.1 前提では整合する。
 - S3 Access Point ポリシーの循環は、Principal をアカウントルートにしロール側 identity policy で絞ることで回避済み(5.2)。
 
 **着手前に確認する項目(V 番号に対応)**:
