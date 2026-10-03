@@ -55,7 +55,7 @@ Fargate cannot use FSx for ONTAP through a volume mount, so it uses object acces
 
 ```bash
 make install   # create .venv with pinned versions
-make ci        # cfn-lint + headings + role-labels
+make ci        # cfn-lint + headings + role-labels + ai-style + test
 ```
 
 ## Related Repositories

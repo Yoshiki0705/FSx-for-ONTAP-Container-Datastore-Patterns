@@ -55,7 +55,7 @@ Fargate はボリュームマウントで FSx for ONTAP を使えないため、
 
 ```bash
 make install   # .venv を固定版で用意
-make ci        # cfn-lint + headings + role-labels
+make ci        # cfn-lint + headings + role-labels + ai-style + test
 ```
 
 ## 関連リポジトリ
