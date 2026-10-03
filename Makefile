@@ -20,6 +20,8 @@ CFN_LINT  := $(call tool,cfn-lint)
 
 TEMPLATE_GLOB := templates/*.yaml
 HEADING_CHECK := tools/check_heading_style.py
+AI_STYLE_CHECK := tools/ai_style_rules.py
+AI_STYLE_PATHS := AGENTS.md README.md README.en.md docs/
 
 .DEFAULT_GOAL := help
 
@@ -48,8 +50,17 @@ role-labels: ## ラベルが職種名を名乗っていないか（所見では�
 	$(PYTHON) tools/check_role_labels.py --selftest >/dev/null
 	$(PYTHON) tools/check_role_labels.py
 
+.PHONY: ai-style
+ai-style: ## AI 調の兆候を数える（報告のみ。--fail なしで常に exit 0）
+	@$(PYTHON) $(AI_STYLE_CHECK) --selftest >/dev/null
+	$(PYTHON) $(AI_STYLE_CHECK) $(AI_STYLE_PATHS) --summary
+
+.PHONY: test
+test: ## ai-style 検出器の stdlib unittest
+	$(PYTHON) -m unittest tools.test_ai_style
+
 .PHONY: gates
-gates: cfn-lint headings role-labels ## どこでも走る検査（CI とフックが呼ぶ）
+gates: cfn-lint headings role-labels ai-style test ## どこでも走る検査（CI とフックが呼ぶ）
 
 .PHONY: ci
 ci: gates ## CI が呼ぶ集約ターゲット
