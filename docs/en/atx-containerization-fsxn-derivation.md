@@ -137,7 +137,7 @@ The procedure for using FSx for ONTAP from ECS is documented assuming the **EC2 
 - Linux containers: mount the volume via NFS on the EC2 Linux instance, then bind mount into the container via the task definition `volumes` (`host.sourcePath`) and `mountPoints`.
 - Windows containers: create an SMB global mapping on a domain-joined EC2 Windows instance, then bind mount similarly via the task definition.
 
-In both cases the container runtime does not mount FSx directly; rather, **the host EC2 instance mounts it and the container bind mounts that**. Relatedly, the ECS + FSx for Windows File Server combination supports only Windows EC2 — Linux EC2 and Fargate are out of scope (source: [Use FSx for Windows File Server volumes with Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/wfsx-volumes.html)).
+In both cases the container runtime does not mount FSx directly; rather, **the host EC2 instance mounts it and the container bind mounts that**. Relatedly, the ECS + FSx for Windows File Server combination supports only Windows EC2, so Linux EC2 and Fargate are out of scope (source: [Use FSx for Windows File Server volumes with Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/wfsx-volumes.html)).
 
 ### 4.3 Fargate constraints [Documented]
 
@@ -149,7 +149,7 @@ In both cases the container runtime does not mount FSx directly; rather, **the h
 | EKS Fargate (other storage) | The EFS CSI driver supports no dynamic provisioning on Fargate, only static. The EBS CSI controller can run on Fargate, but its node DaemonSet runs only on EC2. The persistent option usable on Fargate is limited to EFS (static) | [Amazon EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html), [Amazon EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) |
 | ECS Fargate | Task definitions support only bind mount host volumes and EFS volumes. `dockerVolumeConfiguration` is unsupported. FSx for ONTAP is not among the supported volume types | [Amazon ECS task definition differences for Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html) |
 
-Thus "the AWS Transform ECS deployment is Fargate-capable (3.3)" and "Fargate cannot use FSx for ONTAP (this section)" are both true. **If you take the operational simplicity of Fargate you cannot attach FSx for ONTAP; if you want FSx for ONTAP persistent volumes you choose EKS EC2 worker nodes (or the ECS EC2 launch type)** — a trade-off.
+Thus "the AWS Transform ECS deployment is Fargate-capable (3.3)" and "Fargate cannot use FSx for ONTAP (this section)" are both true. **If you take the operational simplicity of Fargate you cannot attach FSx for ONTAP; if you want FSx for ONTAP persistent volumes you choose EKS EC2 worker nodes (or the ECS EC2 launch type)**. That is the trade-off.
 
 ---
 
@@ -197,7 +197,7 @@ As the conclusion of the D phase (literature research in this repository), here 
 3. **Configure PV**: Create a StorageClass of `ontap-nas` (NFS / shared) or `ontap-san` (iSCSI / dedicated) as appropriate, and claim it from the application PVC.
 4. **Verify**: Confirm data integrity, failover behavior, and avoidance of the EBS multipath conflict when using iSCSI.
 
-This path has room to be split into a separate repository / Kiro project from the EC2 rehost verification (existing). The reasons are: (a) the target is source code rather than a VMware VM; (b) verification needs a different stack — an EKS cluster and Trident; (c) the FSx for ONTAP access form changes from an iSCSI guest mount to a CSI PV. Whether to split is decided after confirming feasibility through hands-on verification.
+This path has room to be split into a separate repository / Kiro project from the EC2 rehost verification (existing). The reasons are: (a) the target is source code rather than a VMware VM; (b) verification needs a different stack, namely an EKS cluster and Trident; (c) the FSx for ONTAP access form changes from an iSCSI guest mount to a CSI PV. Whether to split is decided after confirming feasibility through hands-on verification.
 
 ---
 
@@ -217,7 +217,7 @@ This path has room to be split into a separate repository / Kiro project from th
 Sections 1–8 cover the AWS Transform-centered paths. Landing a VMware VM on AWS and placing
 its data area on FSx for ONTAP is also achievable with **NetApp Shift Toolkit**, not only AWS
 Transform / MGN. Relative to this repository's subject (container data stores), this provides
-the "entry to migration" — the first of two stages, where a container later reaches the
+the "entry to migration", that is, the first of two stages, where a container later reaches the
 FSx for ONTAP it lands on.
 
 ### 9.1 Positioning of Shift Toolkit [Documented]
@@ -249,21 +249,17 @@ The article describes file-to-LUN as seamlessly moving data from file-based stor
 speed and parallelism: moving from a block-backed hypervisor via direct copy or VDDK is slow,
 so you storage-vMotion into an ONTAP NFS datastore first and then convert into the target's
 block storage (the article's example is OpenShift Virtualization) with **high parallelism**
-[Documented]. Entering migration as a file moves fast and flexibly; landing as block matches
-the next operational requirement — that is the switch.
+[Documented]. Entering migration as a file moves fast and flexibly, and landing as block matches
+the next operational requirement; that is the switch.
 
 The following are not enumerated in the article; they are general motivations derived from the
 ONTAP block / file split (section 5) [Documented, general reasoning].
 
-- **File for migration, block for operation**: run the migration phase over NFS (file) for high
-  parallelism and low operational cost, then take iSCSI LUN (block) in the operational phase for
-  single-writer performance or a dedicated disk.
-- **Workloads that require block**: database data areas, middleware that assumes a raw block
-  device, dedicated volumes per StatefulSet replica, and workloads demanding dedicated IOPS —
-  each suits block (mostly RWO) rather than a file share (RWX) (consistent with section 5).
-- **Targets that treat VM disks as block**: OpenShift Virtualization / KubeVirt commonly handle
-  VM disks as block PVCs, creating demand to convert a disk moved as a file into a block LUN on
-  landing.
+| Motivation | Content |
+|---|---|
+| File for migration, block for operation | Run the migration phase over NFS (file) for high parallelism and low operational cost, then take iSCSI LUN (block) in the operational phase for single-writer performance or a dedicated disk |
+| Workloads that require block | Database data areas, middleware that assumes a raw block device, dedicated volumes per StatefulSet replica, and workloads demanding dedicated IOPS. Each suits block (mostly RWO) rather than a file share (RWX) (consistent with section 5) |
+| Targets that treat VM disks as block | OpenShift Virtualization / KubeVirt commonly handle VM disks as block PVCs, creating demand to convert a disk moved as a file into a block LUN on landing |
 
 The use cases are shown as types, not specific customer cases. Because file-to-LUN is a preview
 feature, confirming its hands-on behavior and the workloads it fits requires hands-on
@@ -280,7 +276,7 @@ of switching something migrated as a file over to block.
 
 The access form and the Fargate constraints (section 4) are the same whether the migration
 entry is AWS Transform or Shift Toolkit. That is, Fargate cannot use FSx for ONTAP as a PV /
-data area; you choose EC2 worker nodes / the EC2 launch type — the same trade-off holds on this
+data area; you choose EC2 worker nodes / the EC2 launch type, and the same trade-off holds on this
 path too.
 
 ### 9.4 Unverified items (section 9)

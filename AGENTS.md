@@ -8,9 +8,9 @@ This file is read on every turn and cannot be made conditional, so it is an
 index. The material lives in `docs/agent/`, tracked in git; `.kiro/` is
 gitignored.
 
-- [docs/agent/README.md](docs/agent/README.md) — index of project conventions,
-  output standards (naming, vendor neutrality, public-output safety, JA/EN
-  parity), and quality gates.
+[docs/agent/README.md](docs/agent/README.md) indexes the project conventions,
+the output standards (naming, vendor neutrality, public-output safety, JA/EN
+parity), and the quality gates.
 
 ## Hub
 

@@ -20,7 +20,7 @@ All four configurations can use FSx for ONTAP as a data area. But **the access f
 | 3 | ECS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-ecs-fargate-fsxn-s3ap.yaml) | [Documented] |
 | 4 | EKS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-eks-fargate-fsxn-s3ap.yaml) | [Documented] |
 
-**Key point**: Fargate cannot use FSx for ONTAP through a volume mount, but it can through **object access** via S3 Access Points. If you want to keep file I/O as-is, choose the EC2 configurations (1 / 2); if you take serverless operation, choose the Fargate configurations (3 / 4) and move the app to the S3 SDK — a trade-off.
+**Key point**: Fargate cannot use FSx for ONTAP through a volume mount, but it can through **object access** via S3 Access Points. If you want to keep file I/O as-is, choose the EC2 configurations (1 / 2); if you take serverless operation, choose the Fargate configurations (3 / 4) and move the app to the S3 SDK. That is the trade-off.
 
 ---
 
@@ -150,7 +150,7 @@ Before confirming V1–V5 on real infrastructure, these are the prerequisites, o
 | Availability in the target region | V1 in general | Second-generation FSx for ONTAP expanded to four regions + GovCloud in 2026-04. S3 Access Points support Tokyo (ap-northeast-1) [Documented]. Confirm availability in the region you use |
 | IRSA trust condition (EKS Fargate) | V3 | Add `sub` / `aud` to the trust policy manually after cluster creation (5.2). Do not leave it unset on a shared account |
 
-**Recommended deployment order**: start with the smallest, config 1 (ECS on EC2 + NFS — CloudFormation-complete, no Trident, no S3 Access Points). Once the data path is confirmed (read/write to `/data` from a task), delete it, then proceed step by step to config 2 (apply Trident's Kubernetes objects via kubectl / Helm) and configs 3 / 4 (S3 Access Points, with the manual IRSA step).
+**Recommended deployment order**: start with the smallest, config 1 (ECS on EC2 + NFS, which is CloudFormation-complete, with no Trident and no S3 Access Points). Once the data path is confirmed (read/write to `/data` from a task), delete it, then proceed step by step to config 2 (apply Trident's Kubernetes objects via kubectl / Helm) and configs 3 / 4 (S3 Access Points, with the manual IRSA step).
 
 **Pitfalls (the kind that force rework on real infra)**:
 

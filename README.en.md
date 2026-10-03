@@ -1,4 +1,4 @@
-# FSx for ONTAP as a Container Data Store — 5 Patterns for ECS / EKS
+# FSx for ONTAP as a Container Data Store: 5 Patterns for ECS / EKS
 
 🌐 [日本語](README.md) | 📚 Hub: [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook)
 
@@ -8,11 +8,14 @@ Configuration patterns and CloudFormation templates for using Amazon FSx for Net
 
 ## TL;DR
 
-- **Audience**: anyone who needs a persistent data area for containers on ECS / EKS — whether building new, choosing storage for existing containers, or migrating from legacy. Workloads in scope include .NET Framework / .NET Core, Java / Spring Boot, Windows / SMB-dependent apps, database and StatefulSet persistence, content delivery / media processing / analytics shared across multiple Pods, and multiprotocol (NFS / SMB / S3) shared-data platforms. Migration from VMware is treated as one path among these.
-- **Scope**: NFS/SMB host mount on ECS EC2, NetApp Trident persistent volumes (PV) on EKS EC2, and S3 Access Points object access on ECS/EKS Fargate.
-- **Keywords**: FSx for ONTAP, Amazon ECS, Amazon EKS, AWS Fargate, NFS, SMB, NetApp Trident, S3 Access Points, CloudFormation, AWS Transform.
-- **Status**: literature research + CloudFormation + static verification (cfn-lint). Hands-on deployment is the next stage.
-- **General ONTAP knowledge** (block PV volume limits, multipath, driver choice) lives in the hub, [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook). This repository focuses on the container data-store integration.
+| Item | Content |
+|---|---|
+| Audience | Anyone who needs a persistent data area for containers on ECS / EKS, whether building new, choosing storage for existing containers, or migrating from legacy. Workloads in scope include .NET Framework / .NET Core, Java / Spring Boot, Windows / SMB-dependent apps, database and StatefulSet persistence, content delivery / media processing / analytics shared across multiple Pods, and multiprotocol (NFS / SMB / S3) shared-data platforms. Migration from VMware is treated as one path among these |
+| Scope | NFS/SMB host mount on ECS EC2, NetApp Trident persistent volumes (PV) on EKS EC2, and S3 Access Points object access on ECS/EKS Fargate |
+| Keywords | FSx for ONTAP, Amazon ECS, Amazon EKS, AWS Fargate, NFS, SMB, NetApp Trident, S3 Access Points, CloudFormation, AWS Transform |
+| Status | Literature research + CloudFormation + static verification (cfn-lint). Hands-on deployment is the next stage |
+
+General ONTAP knowledge (block PV volume limits, multipath, driver choice) lives in the hub, [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook). This repository focuses on the container data-store integration.
 
 ## Migration Approach Positioning
 
@@ -26,7 +29,7 @@ There is more than one path for bringing an existing workload to AWS. They divid
 
 **.NET modernization is possible from source code** [Documented]. AWS Transform converts .NET Framework 3.5 / .NET Core 3.1–.NET 10 to .NET 8 / .NET 10, making it cross-platform and Linux-container-ready (C# / VB.NET (preview); ASP.NET MVC / Web API / Web Forms, etc.). WinForms / WPF / Xamarin are preview; Blazor UI and Win32 DLLs without a compatible library are out of scope (as of 2026-09). See the [derivation document](docs/en/atx-containerization-fsxn-derivation.md) for the supported range.
 
-**ONTAP's multiprotocol capability is a benefit common to all three paths** [Documented]. The same volume is reachable over NFS / SMB / S3, and switching protocols needs no data migration. A two-stage shape works: after rehost, a container reaches the data EC2 was using over a different protocol. Shift Toolkit v8.0's file-to-LUN (converting a file directly to block) is a concrete example — useful for switching from a fast, highly parallel file-based migration to single-writer block performance in operation. Motivations, use cases, and sources are in section 9 of the [derivation document](docs/en/atx-containerization-fsxn-derivation.md).
+**ONTAP's multiprotocol capability is a benefit common to all three paths** [Documented]. The same volume is reachable over NFS / SMB / S3, and switching protocols needs no data migration. A two-stage shape works: after rehost, a container reaches the data EC2 was using over a different protocol. Shift Toolkit v8.0's file-to-LUN (converting a file directly to block) is a concrete example, because it switches from a fast, highly parallel file-based migration to single-writer block performance in operation. Motivations, use cases, and sources are in section 9 of the [derivation document](docs/en/atx-containerization-fsxn-derivation.md).
 
 > **Maturity note**: Shift Toolkit v8.0's EC2 support is Early Preview as of 2026-09, and enabling EC2 as a target requires contacting NetApp support. Its maturity differs from the GA AWS Transform / MGN, so state this difference when relying on it in a design.
 
@@ -40,12 +43,12 @@ There is more than one path for bringing an existing workload to AWS. They divid
 | 3 | ECS on Fargate | S3 object API via S3 Access Points | Required (S3 SDK) | [containers-ecs-fargate-fsxn-s3ap.yaml](templates/containers-ecs-fargate-fsxn-s3ap.yaml) |
 | 4 | EKS on Fargate | S3 object API via S3 Access Points | Required (S3 SDK) | [containers-eks-fargate-fsxn-s3ap.yaml](templates/containers-eks-fargate-fsxn-s3ap.yaml) |
 
-Fargate cannot use FSx for ONTAP through a volume mount, so it uses object access via S3 Access Points. Keep file I/O on the EC2 launch type (1 / 2); take serverless operation on Fargate (3 / 4) — a trade-off.
+Fargate cannot use FSx for ONTAP through a volume mount, so it uses object access via S3 Access Points. Keep file I/O on the EC2 launch type (1 / 2), or take serverless operation on Fargate (3 / 4); that is the trade-off.
 
 ## Documentation
 
 - [Containerization Derivation and FSx for ONTAP Integration](docs/en/atx-containerization-fsxn-derivation.md)
-- [Verifying FSx for ONTAP Data Store Configurations on Container Targets](docs/en/atx-containerization-fsxn-storage-verification.md) — prerequisites, order, pitfalls, and cleanup for real deployment are in [7.1 Deployment prerequisites](docs/en/atx-containerization-fsxn-storage-verification.md#71-deployment-prerequisites-the-stage-before-hands-on-verification)
+- [Verifying FSx for ONTAP Data Store Configurations on Container Targets](docs/en/atx-containerization-fsxn-storage-verification.md). Prerequisites, order, pitfalls, and cleanup for real deployment are in [7.1 Deployment prerequisites](docs/en/atx-containerization-fsxn-storage-verification.md#71-deployment-prerequisites-the-stage-before-hands-on-verification)
 - [Mounting FSx for ONTAP on ECS on EC2](docs/en/ecs-ec2-fsxn-mount.md)
 
 ## Gates
@@ -57,5 +60,5 @@ make ci        # cfn-lint + headings + role-labels
 
 ## Related Repositories
 
-- Hub: [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook) — design, build, and operations knowledge for FSx for ONTAP
-- [VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP) — VMware → EC2 + FSx for ONTAP rehost migration verification. The AD that the SMB configuration references can be set up there
+- Hub: [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook), covering design, build, and operations knowledge for FSx for ONTAP
+- [VMware-Migration-EC2-ONTAP](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP), the verification of VMware to EC2 + FSx for ONTAP rehost migration. The AD that the SMB configuration references can be set up there

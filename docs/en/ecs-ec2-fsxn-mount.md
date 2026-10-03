@@ -82,15 +82,17 @@ sudo mount -t nfs -o nfsvers=4.1 svm-dns-name:/volume-junction-path /fsxontap
 
 As a follow-on from the earlier discussion, ECS has two mechanisms to place a resident task per host.
 
-- **daemon scheduling strategy**: a service's `schedulingStrategy: DAEMON`. On the EC2 launch type it places one task on each container instance.
-- **ECS Managed Daemons**: a newer capability that places and manages one daemon task on each EC2 instance of an Amazon ECS Managed Instances capacity provider. Intended for logging, tracing, and security agents (source: [Amazon ECS Managed Daemons](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/managed-daemons.html)).
+| Mechanism | Content |
+|---|---|
+| daemon scheduling strategy | A service's `schedulingStrategy: DAEMON`. On the EC2 launch type it places one task on each container instance |
+| ECS Managed Daemons | A newer capability that places and manages one daemon task on each EC2 instance of an Amazon ECS Managed Instances capacity provider. Intended for logging, tracing, and security agents (source: [Amazon ECS Managed Daemons](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/managed-daemons.html)) |
 
 Both are ways to place an ECS task on each instance and do not provide a Kubernetes CSI runtime. The NFS/SMB host-mount methods (3.1–3.3) do not need a daemon mechanism. The instance bootstrap mount is sufficient.
 
 ### 3.8 Constraints and alternatives [Documented]
 
 - This method is EC2-launch-type only. Fargate cannot mount to a host, so it cannot use it (Fargate uses object access via S3 Access Points. See Configs 3 / 4 in the [verification memo](atx-containerization-fsxn-storage-verification.md)).
-- The ECS + FSx for Windows File Server combination is Windows EC2 only — Linux EC2 and Fargate are out of scope (source: [Use FSx for Windows File Server volumes with Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/wfsx-volumes.html)). This document targets FSx for ONTAP.
+- The ECS + FSx for Windows File Server combination is Windows EC2 only, so Linux EC2 and Fargate are out of scope (source: [Use FSx for Windows File Server volumes with Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/wfsx-volumes.html)). This document targets FSx for ONTAP.
 - Because it is a bind mount, multiple tasks share the same host mount. The sharing granularity is per host.
 
 ---
@@ -99,7 +101,7 @@ Both are ways to place an ECS task on each instance and do not provide a Kuberne
 
 ### 4.1 Existence of Trident for Docker [Documented]
 
-Trident is offered not only as a Kubernetes CSI driver but also as a **Docker volume plugin** (source: [Deploy Trident for Docker](https://docs.netapp.com/us-en/trident/trident-docker/deploy-docker.html)). It does not depend on Kubernetes. A passage in the requirements documentation describes this: Trident is a process that runs in a container and runs on any Linux worker; the actual volume mount is handled by the worker's standard NFS client / iSCSI initiator (source: [Requirements](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html)).
+Trident is offered as a **Docker volume plugin**, as well as a Kubernetes CSI driver (source: [Deploy Trident for Docker](https://docs.netapp.com/us-en/trident/trident-docker/deploy-docker.html)). It does not depend on Kubernetes. A passage in the requirements documentation describes this: Trident is a process that runs in a container and runs on any Linux worker; the actual volume mount is handled by the worker's standard NFS client / iSCSI initiator (source: [Requirements](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html)).
 
 Key points of the Docker managed plugin method:
 
