@@ -138,7 +138,7 @@ Before confirming V1–V5 on real infrastructure, these are the prerequisites, o
 
 **Confirmed design decisions (do not undo on real infra)**:
 
-- NFS explicitly uses `nfsvers=4.1`, which completes over the single port 2049 [Verified]. Ingress on 2049 only is correct. 111 / 635 / 4045-4049 are for NFSv3 and are not needed here.
+- Config 1's template explicitly sets `nfsvers=4.1` for the NFS mount [Verified]. That NFSv4.1 completes over the single port 2049, and that 111 / 635 / 4045-4049 are for NFSv3 and are not needed for v4.1-only, is stated in AWS documentation and is not verified as ingress connectivity in this repository [Documented] (source: [Use NFS to mount FSx for ONTAP volume on Linux instance](https://repost.aws/knowledge-center/ec2-mount-fsx-ontap-nfs)). So designing the template ingress as 2049-only is consistent on the v4.1 assumption.
 - The S3 Access Point policy circular reference is already avoided by setting the Principal to the account root and scoping on the role's identity policy (5.2).
 
 **Items to confirm before starting (mapped to the V numbers)**:
