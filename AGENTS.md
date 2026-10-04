@@ -8,22 +8,24 @@ This file is read on every turn and cannot be made conditional, so it is an
 index. The material lives in `docs/agent/`, tracked in git; `.kiro/` is
 gitignored.
 
-- [docs/agent/README.md](docs/agent/README.md) — index of project conventions,
-  output standards (naming, vendor neutrality, public-output safety, JA/EN
-  parity), and quality gates.
+[docs/agent/README.md](docs/agent/README.md) indexes the project conventions,
+the output standards (naming, vendor neutrality, public-output safety, JA/EN
+parity), and the quality gates.
 
 ## Hub
 
 This repository is a spoke of the Amazon FSx for NetApp ONTAP knowledge hub,
 [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook).
 General ONTAP knowledge (block PV volume limits, multipath, Trident driver
-choice) lives there and is cross-linked, not duplicated here.
+choice) lives there and is cross-linked, not duplicated here. The writing-quality
+criteria the `ai-style` gate checks against live on the Hub:
+[docs/agent/writing-quality.md](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/agent/writing-quality.md).
 
 ## Run the gates
 
 ```bash
 make install   # .venv を固定版で用意
-make ci        # cfn-lint + headings + role-labels
+make ci        # cfn-lint + headings + role-labels + ai-style (report-only) + test
 ```
 
 Never commit VMware or ONTAP credentials, personal names, AWS account IDs, or

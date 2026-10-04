@@ -9,7 +9,7 @@ when steering is not loaded. Enforced by
 
 - First mention: **Amazon FSx for NetApp ONTAP**; thereafter **FSx for ONTAP**.
   `FSxN`, bare `FSx`, and `FSx ONTAP` are forbidden. <!-- allow:naming -->
-- Access Points: **FSx for ONTAP S3 AP** — not "FSx S3 AP", and not a bare <!-- allow:naming -->
+- Access Points: **FSx for ONTAP S3 AP**, that is, not "FSx S3 AP", and not a bare <!-- allow:naming -->
   "S3 AP" where the FSx for ONTAP context matters.
 - Do not propose NetApp Workload Factory, NetApp Console, or BlueXP. Reframe to <!-- allow:naming -->
   the native equivalent: Amazon CloudWatch, ONTAP REST API, FabricPool,
@@ -75,7 +75,7 @@ Nominalising must not drop the assertion the heading carries. 「監査の 2 つ
 片方の穴」loses the claim that a gap exists. Keep it with a suffix (`〜の存在` /
 `〜の不在` / `〜の成立` / `〜の不成立` / `〜の無効化` / `〜の上限` / `〜の理由`) or a
 modifier (`未対応の〜` / `既定で無効な〜`). A heading that survives no suffix is
-carrying a sentence — move it into the body.
+carrying a sentence, so move it into the body.
 
 Out of scope: H1 (the document title, which this repository keeps in-body and
 which its own rule defines as a one-line claim), English headings, `#` lines
