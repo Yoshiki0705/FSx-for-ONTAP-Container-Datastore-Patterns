@@ -1,0 +1,90 @@
+# FSx for ONTAP as a Container Data Store — ECS / EKS Patterns
+
+> Reference architecture, CloudFormation templates, and literature-based verification for using
+> Amazon FSx for NetApp ONTAP as the persistent data store for containerized workloads on
+> Amazon ECS and Amazon EKS, across both EC2 and AWS Fargate launch types. It covers five access
+> forms — NFS and SMB host mounts on ECS on EC2, NetApp Trident persistent volumes (NFS and iSCSI)
+> on EKS on EC2, and S3 Access Points object access on Fargate — including workloads replatformed
+> with AWS Transform containerization. Current state: literature review plus CloudFormation with
+> static validation (cfn-lint); live deployment is the next stage.
+
+## How to read this repository
+
+Japanese under `docs/ja/` is the primary, authoritative version; `docs/en/` mirrors its section
+structure. The reach form to FSx for ONTAP differs by launch type, and the repository keeps the
+distinction explicit: EC2 launch types mount files (NFS, SMB, or iSCSI persistent volumes), while
+Fargate cannot mount a volume and reaches the data as objects through S3 Access Points. Each claim
+carries an evidence tag — reproduced here, stated in vendor or AWS documentation, or unverified — and
+the templates are passed through cfn-lint only, not deployed, which the documents say inline rather
+than imply.
+
+## Overview
+
+- [README (Japanese)](README.md): Primary hub — the five-pattern fit table, the three migration
+  approaches that land data on FSx for ONTAP, and the trade-off between EC2 and Fargate launch types.
+- [README (English)](README.en.md): English hub mirroring the Japanese structure.
+- [AGENTS.md](AGENTS.md): Conventions, naming rules, and quality gates for coding agents.
+
+## Patterns and verification
+
+- [Container-target FSx for ONTAP data-store verification (Japanese)](docs/ja/atx-containerization-fsxn-storage-verification.md):
+  Feasibility of the access forms across ECS/EKS on EC2 and Fargate, each turned into a
+  CloudFormation template and taken through static validation, with the deploy prerequisites,
+  ordering, and pitfalls stated as unverified until live deployment.
+- [Container-target FSx for ONTAP data-store verification (English)](docs/en/atx-containerization-fsxn-storage-verification.md):
+  English mirror of the verification record.
+- [ECS on EC2 mount of FSx for ONTAP (Japanese)](docs/ja/ecs-ec2-fsxn-mount.md): The ECS on EC2
+  host-mount path at procedure level — AWS's NFS/SMB host-mount method, plus a documentation-based
+  assessment of running NetApp Trident as a container on ECS on EC2, with confidence recorded
+  separately per claim.
+- [ECS on EC2 mount of FSx for ONTAP (English)](docs/en/ecs-ec2-fsxn-mount.md): English mirror of
+  the mount procedure.
+
+## Migration approaches and derivation
+
+- [Containerization derivation and FSx for ONTAP compatibility (Japanese)](docs/ja/atx-containerization-fsxn-derivation.md):
+  Why AWS Transform containerization and the FSx for ONTAP persistent-volume path are separate
+  mechanisms, how the EKS data path uses NetApp Trident (NFS `ontap-nas` and iSCSI `ontap-san`
+  drivers) rather than AWS Transform, which .NET sources are in scope for modernization, and the
+  multiprotocol property shared across the migration routes.
+- [Containerization derivation and FSx for ONTAP compatibility (English)](docs/en/atx-containerization-fsxn-derivation.md):
+  English mirror of the derivation document.
+
+## CloudFormation templates
+
+- [ECS on EC2 + NFS host mount](templates/containers-ecs-ec2-fsxn-nfs.yaml): Mounts an SVM NFS
+  junction on the EC2 container instance and bind-mounts it into the task.
+- [ECS on EC2 (Windows) + SMB](templates/containers-ecs-ec2-fsxn-smb.yaml): SMB global mapping on a
+  Windows container instance, bind-mounted into the task; references an existing directory.
+- [EKS on EC2 + NetApp Trident](templates/containers-eks-ec2-fsxn-trident.yaml): EKS cluster, managed
+  node group, and the Trident add-on provisioning NFS (`ontap-nas`) and iSCSI (`ontap-san`)
+  persistent volumes.
+- [ECS on Fargate + S3 Access Points](templates/containers-ecs-fargate-fsxn-s3ap.yaml): Object access
+  to FSx for ONTAP through S3 Access Points for a Fargate task (application uses the S3 SDK).
+- [EKS on Fargate + S3 Access Points](templates/containers-eks-fargate-fsxn-s3ap.yaml): Object access
+  to FSx for ONTAP through S3 Access Points for an EKS on Fargate pod (application uses the S3 SDK).
+- [Parameter examples](params/): One `*.example.json` per template; real values stay outside version
+  control.
+
+## References
+
+- [Project conventions](docs/agent/project-conventions.md): Scope, directory layout, and the hub
+  relationship.
+- [Output standards](docs/agent/output-standards.md): Naming, vendor neutrality, public-output
+  safety, and Japanese heading style.
+- [Quality gates](docs/agent/quality-gates.md): The cfn-lint, heading, and role-label gates and how
+  to run them.
+
+## Hub and related
+
+This repository is a spoke of the Amazon FSx for NetApp ONTAP knowledge hub. General ONTAP knowledge
+is cross-linked there, not duplicated here.
+
+- [Hub: FSx for ONTAP Adoption Playbook — llms.txt](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/llms.txt):
+  LLM-facing map of the hub knowledge base.
+- [Hub: workload entry map](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/reference/workload-entry-map.md):
+  How workloads map onto the hub's lifecycle and topic axes and onto the spoke repositories.
+
+> **Block-volume note**: this repository covers Kubernetes block persistent volumes via the Trident
+> iSCSI (`ontap-san`) driver. General ONTAP block-storage knowledge — persistent-volume limits,
+> multipath, driver choice — lives in the Hub's related block-storage note rather than here.
