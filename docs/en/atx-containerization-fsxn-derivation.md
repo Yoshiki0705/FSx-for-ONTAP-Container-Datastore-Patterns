@@ -310,5 +310,6 @@ path too.
 - [Simplify compute management with AWS Fargate (EKS)](https://docs.aws.amazon.com/eks/latest/userguide/fargate.html)
 - [AWS Transform FSx for ONTAP support GA verification (separate repository VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/en/atx-fsxn-ga-verification.md)
 - [Procedure: VMware → EC2 / FSx for ONTAP migration with AWS Transform (separate repository)](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/en/aws-transform-migration-procedure.md)
+- [Branch: containerization (separate repository FSx-for-ONTAP-App-Modernization-Patterns)](https://github.com/Yoshiki0705/FSx-for-ONTAP-App-Modernization-Patterns/blob/main/docs/en/branch-containerization.md): in that repository, which covers staged application modernization, the containerization path branches into this document
 - [NetApp Shift Toolkit overview (cross-hypervisor migration)](https://docs.netapp.com/us-en/netapp-solutions/vm-migrate/migrate-overview.html)
 - [What's New in Shift v8.0: File-to-LUN, EC2 + FSx for ONTAP, Trident (NetApp Community)](https://community.netapp.com/community/discussion/467669/what-s-new-in-shift-v8-0-file-to-lun-ec2-fsx-for-ontap-trident-integration-more)

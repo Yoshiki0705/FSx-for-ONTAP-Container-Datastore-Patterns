@@ -308,5 +308,6 @@ EC2 起動タイプを選ぶ、というトレードオフはこの経路でも�
 - [Simplify compute management with AWS Fargate(EKS)](https://docs.aws.amazon.com/eks/latest/userguide/fargate.html)
 - [AWS Transform の FSx for ONTAP 対応 GA 検証(別リポジトリ VMware-Migration-EC2-ONTAP)](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/ja/atx-fsxn-ga-verification.md)
 - [手順: AWS Transform による VMware → EC2 / FSx for ONTAP 移行(別リポジトリ)](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/ja/aws-transform-migration-procedure.md)
+- [分岐: コンテナ化(別リポジトリ FSx-for-ONTAP-App-Modernization-Patterns)](https://github.com/Yoshiki0705/FSx-for-ONTAP-App-Modernization-Patterns/blob/main/docs/ja/branch-containerization.md): アプリケーションの段階的モダナイゼーションを扱う別リポジトリで、コンテナ化を選ぶ経路がこの文書へ分岐する
 - [NetApp Shift Toolkit overview(ハイパーバイザ間移行)](https://docs.netapp.com/us-en/netapp-solutions/vm-migrate/migrate-overview.html)
 - [What's New in Shift v8.0: File-to-LUN, EC2 + FSx for ONTAP, Trident(NetApp Community)](https://community.netapp.com/community/discussion/467669/what-s-new-in-shift-v8-0-file-to-lun-ec2-fsx-for-ontap-trident-integration-more)
