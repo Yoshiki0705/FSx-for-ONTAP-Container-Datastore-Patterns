@@ -192,7 +192,41 @@ FSx for ONTAP のブロック(iSCSI LUN)利用について、想定どおりデ�
 
 ---
 
-## 7. 実現するための段階と分割の判断
+## 7. ワークロードが依存するデータ契約の不変条件
+
+ここまでの到達形態(§4・§6)は「どの実行環境でどうつながるか」を扱った。実際のワークロードは、つながった先に**どういう形でデータが置かれているか**にも依存する。この節は、アプリ側のモダナイズ検証から持ち込まれたデータ契約の不変条件を、到達形態とは独立の層として記録する。コンテナ runtime については `open / 未測定` で、実機で実行・記録するまで検証済みにはならない。
+
+**この節は .NET の話ではない。** 下の不変条件は特定の 1 スライス(後述の DocIntake は .NET コンソールアプリ)から持ち込まれたが、条件自体はアプリの言語・フレームワークに依らない。§3.2 のとおりコンテナ化はソースコード解析であって .NET に限定されず、§6 の適合表も Java / Spring Boot、Windows / SMB 依存アプリ、DB / StatefulSet、複数 Pod 共有を同じ列で扱っている。**具体例は理解の助けであって、適用範囲を狭めるものではない。**
+
+### 7.1 データ契約の不変条件 [文書 / open・未測定]
+
+| 不変条件 | 内容 |
+|---|---|
+| データの置き場所 | データは FSx for ONTAP 上に置く |
+| appdata ルート | アプリのデータは appdata ルート配下にまとまる(その形を契約として固定する) |
+| coordination store | 協調用のストア(coordination store)を持つ |
+| control-plane の分離 | control-plane は appdata ルートの**外**に置く(データと制御面を混在させない設計規則) |
+| 記録経路 | 現在の記録経路は NFS と FSx for ONTAP S3 Access Points |
+| retention | retention 機能は不使用 |
+
+これらは到達形態(NFS host マウント / Trident PV / S3 Access Points)が何であっても、データ側に保たれるべき形である。到達形態を選ぶ(§4・§6、ルート選択)こととは別の層で、取り違えないよう分けて読む。
+
+### 7.2 具体例(代表例の 1 つ)と、同じ契約が当てはまる範囲
+
+具体例として、アプリ側で段階的にモダナイズされている DocIntake(.NET コンソールアプリ)が、上の不変条件に沿ってデータを FSx for ONTAP に置き、NFS と S3 Access Points で記録する。これは**代表例の 1 つ**であって、この節の主語ではない。主語は 7.1 のデータ契約と §4・§6 の到達形態である。
+
+同じ契約と到達形態は、次の非 .NET ワークロードにも対称に当てはまる(§6 の適合表の行と対応):
+
+- Java / Spring Boot のアプリ(ステートフル / 共有データのいずれも)
+- Windows / SMB 依存アプリ(SMB PV またはホスト SMB マウント)
+- データベース / StatefulSet の永続化(専用ディスク要求)
+- コンテンツ配信 / メディア処理 / 解析など、複数 Pod で共有するワークロード
+
+**読み方**: 「.NET のコンソールアプリの話」と受け取ると、上の非 .NET ワークロードを持つ読者が自分には関係ないと離れてしまう。DocIntake は不変条件を具体的に見せるための 1 例で、適用範囲は §6 の適合表が示すワークロード全般である。アプリ固有なのは「どのスライスがこの契約を持ち込んだか」だけで、契約そのもの(7.1)と到達形態(§4・§6)は一般である。
+
+---
+
+## 8. 実現するための段階と分割の判断
 
 D フェーズ(本リポジトリでは文献調査)の結論として、コンテナ経路の FSx for ONTAP 連携を実機検証する場合の段階を示す。実機検証は本セッションでは未実施。
 
@@ -205,7 +239,7 @@ D フェーズ(本リポジトリでは文献調査)の結論として、コン�
 
 ---
 
-## 8. 未確認事項
+## 9. 未確認事項
 
 | # | 項目 | 調査した範囲(2026-09-22) |
 |---|---|---|
@@ -216,15 +250,15 @@ D フェーズ(本リポジトリでは文献調査)の結論として、コン�
 
 ---
 
-## 9. サードパーティツールによる VM → EC2 移行(NetApp Shift Toolkit v8.0)
+## 10. サードパーティツールによる VM → EC2 移行(NetApp Shift Toolkit v8.0)
 
-ここまでの 1〜8 章は AWS Transform を軸にした経路である。VMware VM を AWS 上に運び、その
+ここまでの 1〜9 章は AWS Transform を軸にした経路である。VMware VM を AWS 上に運び、その
 データ領域を FSx for ONTAP に載せる経路は、AWS Transform / MGN のほかに **NetApp Shift
 Toolkit** でも成立する。本リポジトリの主題(コンテナのデータストア)に対しては、これは
 「移行の入口」を提供し、着地した FSx for ONTAP へ後からコンテナが到達する 2 段階の前段に
 あたる。
 
-### 9.1 Shift Toolkit の位置づけ [文書]
+### 10.1 Shift Toolkit の位置づけ [文書]
 
 Shift Toolkit はハイパーバイザ間の VM 移行とディスク変換を行うスタンドアロン製品で、
 FlexClone による高速変換を特徴とする(出典: [Shift Toolkit overview](https://docs.netapp.com/us-en/netapp-solutions/vm-migrate/migrate-overview.html))。
@@ -232,7 +266,7 @@ FlexClone による高速変換を特徴とする(出典: [Shift Toolkit overvie
 Virtualization / Proxmox VE で、**この overview の版には AWS / EC2 が着地先として現れない**。
 AWS 対応は次の v8.0 で preview 機能として加わった。
 
-### 9.2 v8.0 の AWS 対応(Early Preview)[文書][Preview]
+### 10.2 v8.0 の AWS 対応(Early Preview)[文書][Preview]
 
 Shift Toolkit v8.0 は preview 機能として AWS への移行を導入した(出典: [What's New in Shift v8.0(NetApp Community)](https://community.netapp.com/community/discussion/467669/what-s-new-in-shift-v8-0-file-to-lun-ec2-fsx-for-ontap-trident-integration-more))。
 
@@ -266,22 +300,22 @@ MGN とは成熟度が異なるため、設計の前提に据える場合はこ�
 | VM ディスクをブロックとして扱う移行先 | OpenShift Virtualization / KubeVirt は VM ディスクをブロック PVC で扱うのが一般的で、ファイルとして運んだディスクをブロック LUN へ変換して着地させる需要がある |
 
 ユースケースは特定顧客の事例ではなく類型として示す。file-to-LUN は Preview 機能のため、実機
-挙動と適合するワークロードの確定は実機検証を要する(9.4 の C5 / C6)。
+挙動と適合するワークロードの確定は実機検証を要する(10.4 の C5 / C6)。
 
-### 9.3 コンテナのデータストアとの接続(2 段階移行)[文書]
+### 10.3 コンテナのデータストアとの接続(2 段階移行)[文書]
 
 Shift Toolkit v8.0 で VM を EC2 + FSx for ONTAP へ運ぶと、データは FSx for ONTAP の
 ボリューム / LUN に載る。この同一データに、後からコンテナ側(EKS の Trident PV、ECS の
 EC2 ホスト経由 NFS)が **iSCSI または NFS** で到達できる。ONTAP のマルチプロトコル特性により、
 同一ボリュームへ複数プロトコルでアクセスでき、プロトコル切替時のデータ移行を要しない
-(1〜8 章の Trident / host NFS 経路がそのまま適用される)。v8.0 の file-to-LUN 機能は、
+(1〜9 章の Trident / host NFS 経路がそのまま適用される)。v8.0 の file-to-LUN 機能は、
 ファイルとして移行したものをブロックへ切り替える具体例にあたる。
 
 到達形態と Fargate の制約(4 章)は移行の入口が AWS Transform か Shift Toolkit かに依らず
 同じである。すなわち Fargate では FSx for ONTAP を PV / データ領域に使えず、EC2 ワーカー /
 EC2 起動タイプを選ぶ、というトレードオフはこの経路でも変わらない。
 
-### 9.4 未確認事項(9 章)
+### 10.4 未確認事項(10 章)
 
 | # | 項目 | 調査した範囲(2026-09-23) |
 |---|---|---|

@@ -192,7 +192,41 @@ Legend: **NFS PV** = Trident `ontap-nas` / **iSCSI PV** = Trident `ontap-san` / 
 
 ---
 
-## 7. Stages to Realize It and the Split Decision
+## 7. Data-Contract Invariants the Workload Depends On
+
+The reach forms so far (§4, §6) covered "which runtime connects how." A real workload also depends on **the shape in which the data sits** at the far end of that connection. This section records the data-contract invariants carried over from the application-side modernization verification, as a layer independent of the reach form. For the container runtime they are `open / not measured`, and do not become verified until this repository runs and records them.
+
+**This section is not about .NET.** The invariants below were carried over from one slice (the DocIntake example below is a .NET console application), but the invariants themselves do not depend on the application's language or framework. As §3.2 states, containerization is source-code analysis and is not limited to .NET, and the §6 fitness matrix handles Java / Spring Boot, Windows / SMB-dependent apps, DB / StatefulSet, and multi-Pod sharing in the same columns. **A concrete example aids understanding; it does not narrow the scope.**
+
+### 7.1 The data-contract invariants [Documented / open, not measured]
+
+| Invariant | Content |
+|---|---|
+| Where data lives | Data sits on FSx for ONTAP |
+| appdata root | Application data is gathered under an appdata root (its shape is fixed as a contract) |
+| coordination store | A coordination store is kept |
+| Control-plane separation | The control plane sits **outside** the appdata root (a design rule that does not mix data and the control plane) |
+| Recording paths | Current recording paths are NFS and FSx for ONTAP S3 Access Points |
+| Retention | The retention feature is not used |
+
+These are the shape the data side must keep regardless of the reach form (NFS host mount / Trident PV / S3 Access Points). Read them as a layer separate from choosing the reach form (§4, §6, route selection), so the two are not confused.
+
+### 7.2 The example (one representative case) and the scope the same contract covers
+
+As a concrete example, DocIntake (a .NET console application) being modernized in stages on the application side places its data on FSx for ONTAP per the invariants above and records over NFS and S3 Access Points. This is **one representative example**, not the subject of this section. The subject is the data contract in 7.1 and the reach forms in §4 and §6.
+
+The same contract and reach forms apply symmetrically to the following non-.NET workloads (matching the rows of the §6 fitness matrix):
+
+- Java / Spring Boot applications (stateful or shared-data alike)
+- Windows / SMB-dependent apps (SMB PV or host SMB mount)
+- Database / StatefulSet persistence (dedicated-disk requirement)
+- Content delivery / media processing / analytics and other workloads shared across multiple Pods
+
+**How to read it**: taken as "a story about a .NET console app," a reader with one of the non-.NET workloads above would conclude it does not concern them and leave. DocIntake is one example that makes the invariants concrete; the scope of application is the workloads the §6 fitness matrix shows. What is application-specific is only "which slice carried this contract in"; the contract itself (7.1) and the reach forms (§4, §6) are general.
+
+---
+
+## 8. Stages to Realize It and the Split Decision
 
 As the conclusion of the D phase (literature research in this repository), here are the stages for hands-on verification of the container-path FSx for ONTAP integration. No hands-on verification was performed this session.
 
@@ -205,7 +239,7 @@ This path has room to be split into a separate repository / Kiro project from th
 
 ---
 
-## 8. Unverified Items
+## 9. Unverified Items
 
 | # | Item | Scope searched (2026-09-22) |
 |---|---|---|
@@ -216,15 +250,15 @@ This path has room to be split into a separate repository / Kiro project from th
 
 ---
 
-## 9. Third-Party VM → EC2 Migration (NetApp Shift Toolkit v8.0)
+## 10. Third-Party VM → EC2 Migration (NetApp Shift Toolkit v8.0)
 
-Sections 1–8 cover the AWS Transform-centered paths. Landing a VMware VM on AWS and placing
+Sections 1–9 cover the AWS Transform-centered paths. Landing a VMware VM on AWS and placing
 its data area on FSx for ONTAP is also achievable with **NetApp Shift Toolkit**, not only AWS
 Transform / MGN. Relative to this repository's subject (container data stores), this provides
 the "entry to migration", that is, the first of two stages, where a container later reaches the
 FSx for ONTAP it lands on.
 
-### 9.1 Positioning of Shift Toolkit [Documented]
+### 10.1 Positioning of Shift Toolkit [Documented]
 
 Shift Toolkit is a standalone product for cross-hypervisor VM migration and disk conversion,
 characterized by fast FlexClone-based conversion (source: [Shift Toolkit overview](https://docs.netapp.com/us-en/netapp-solutions/vm-migrate/migrate-overview.html)).
@@ -232,7 +266,7 @@ Its traditional targets are VMware ESXi ⇄ Microsoft Hyper-V, and ESXi → OLVM
 OpenShift Virtualization / Proxmox VE. **This version of the overview does not list AWS / EC2
 as a target.** AWS support was added as a preview feature in v8.0.
 
-### 9.2 AWS support in v8.0 (Early Preview) [Documented][Preview]
+### 10.2 AWS support in v8.0 (Early Preview) [Documented][Preview]
 
 Shift Toolkit v8.0 introduced migration to AWS as a preview feature (source: [What's New in Shift v8.0 (NetApp Community)](https://community.netapp.com/community/discussion/467669/what-s-new-in-shift-v8-0-file-to-lun-ec2-fsx-for-ontap-trident-integration-more)).
 
@@ -267,15 +301,15 @@ ONTAP block / file split (section 5) [Documented, general reasoning].
 
 The use cases are shown as types, not specific customer cases. Because file-to-LUN is a preview
 feature, confirming its hands-on behavior and the workloads it fits requires hands-on
-verification (C5 / C6 in 9.4).
+verification (C5 / C6 in 10.4).
 
-### 9.3 Connecting to the container data store (two-stage migration) [Documented]
+### 10.3 Connecting to the container data store (two-stage migration) [Documented]
 
 Moving a VM to EC2 + FSx for ONTAP with Shift Toolkit v8.0 places the data on an FSx for ONTAP
 volume / LUN. A container can later reach that same data (EKS via a Trident PV, ECS via
 host NFS on EC2) over **iSCSI or NFS**. ONTAP's multiprotocol capability allows access to the
 same volume over multiple protocols with no data migration on protocol switch (the Trident /
-host NFS paths of sections 1–8 apply as-is). The v8.0 file-to-LUN feature is a concrete example
+host NFS paths of sections 1–9 apply as-is). The v8.0 file-to-LUN feature is a concrete example
 of switching something migrated as a file over to block.
 
 The access form and the Fargate constraints (section 4) are the same whether the migration
@@ -283,7 +317,7 @@ entry is AWS Transform or Shift Toolkit. That is, Fargate cannot use FSx for ONT
 data area; you choose EC2 worker nodes / the EC2 launch type, and the same trade-off holds on this
 path too.
 
-### 9.4 Unverified items (section 9)
+### 10.4 Unverified items (section 10)
 
 | # | Item | Scope searched (2026-09-23) |
 |---|---|---|
