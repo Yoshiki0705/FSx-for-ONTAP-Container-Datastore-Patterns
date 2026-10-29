@@ -4,7 +4,8 @@ Description: >
   EKS add-on, for provisioning Amazon FSx for NetApp ONTAP persistent volumes
   (NFS via ontap-nas, iSCSI via ontap-san). Cluster + node group + add-on only;
   the FSx for ONTAP file system and SVM are referenced by parameter. Static
-  verification target (cfn-lint); not deployed.
+  verification: cfn-lint. Deployment checks and their scope are in
+  docs/en/atx-containerization-fsxn-storage-verification.md.
 
 # The `Project` tag value below is a cost-allocation tag string for this
 # repository (aws-container-datastore-patterns). It is a cost tag, not a
@@ -28,17 +29,19 @@ Description: >
 # and docs/ja|en/atx-containerization-fsxn-storage-verification.md for the
 # follow-up steps.
 #
-# iSCSI note: if you use ontap-san (block) alongside the EBS CSI driver, the node
-# multipath configuration must blacklist EBS devices, or multipath will claim EBS
-# volumes. This is a node-level config applied via the node bootstrap, not here.
-
+# iSCSI note: ontap-san needs the iSCSI and multipath tools on every node, and
+# the Amazon Linux 2023 EKS AMI ships none of them (nfs-utils is present). With
+# PrepareNodesForIscsi=true a launch template installs them at first boot and
+# writes /etc/multipath.conf with find_multipaths no and the EBS devices
+# blacklisted, so multipath does not claim EBS volumes when the EBS CSI driver is
+# also in use. Trident detects iSCSI when its node pod starts; if a node pod
+# started before the tools existed, restart the trident-node-linux DaemonSet.
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
           default: Network (existing, referenced)
         Parameters:
-          - VpcId
           - Subnet1Id
           - Subnet2Id
       - Label:
@@ -48,6 +51,7 @@ Metadata:
           - KubernetesVersion
           - NodeInstanceType
           - NodeDesiredSize
+          - PrepareNodesForIscsi
       - Label:
           default: FSx for ONTAP (existing, referenced)
         Parameters:
@@ -55,13 +59,13 @@ Metadata:
           - TridentAddonVersion
 
 Parameters:
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: VPC in which to create the EKS cluster and nodes
 
   Subnet1Id:
     Type: AWS::EC2::Subnet::Id
-    Description: Private subnet 1 for the EKS control plane ENIs and nodes
+    Description: >
+      Private subnet 1 for the EKS control plane ENIs and nodes. It must be in the
+      same VPC as the FSx for ONTAP file system, and have a route to ECR and to the
+      Amazon Linux package repository (a NAT gateway or VPC endpoints).
 
   Subnet2Id:
     Type: AWS::EC2::Subnet::Id
@@ -75,8 +79,14 @@ Parameters:
 
   KubernetesVersion:
     Type: String
-    Default: '1.31'
-    Description: EKS Kubernetes version
+    Description: >
+      EKS Kubernetes version, for example 1.35. There is no default: a default
+      goes stale (a version moves from standard to extended support, which is
+      billed at a higher cluster rate) without any change to this file. List the
+      versions in standard support with
+      aws eks describe-cluster-versions --query 'clusterVersions[?status==`STANDARD_SUPPORT`].clusterVersion'
+      and check the Trident add-on's supported range with
+      aws eks describe-addon-versions --addon-name netapp_trident-operator --kubernetes-version <version>
     AllowedPattern: '^1\.(2[6-9]|3[0-9])$'
 
   NodeInstanceType:
@@ -89,6 +99,17 @@ Parameters:
     Default: 2
     MinValue: 1
     Description: Desired number of worker nodes
+  PrepareNodesForIscsi:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: >
+      When true, a launch template installs the iSCSI and multipath tools on each
+      node at first boot and writes /etc/multipath.conf (find_multipaths no, EBS
+      devices blacklisted). Needed for ontap-san. Set false if you only use
+      ontap-nas. The script targets the Amazon Linux 2023 EKS AMI (dnf, systemd).
 
   FsxnSecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
@@ -108,6 +129,7 @@ Parameters:
 
 Conditions:
   UseDefaultAddonVersion: !Equals [!Ref TridentAddonVersion, 'DEFAULT']
+  PrepareIscsi: !Equals [!Ref PrepareNodesForIscsi, 'true']
 
 Resources:
 
@@ -148,22 +170,23 @@ Resources:
         - Key: Project
           Value: aws-container-datastore-patterns
 
-  # ---------- Node security group ----------
-  NodeSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+  # ---------- FSx for ONTAP security group ingress ----------
+  # The source is the EKS cluster security group, which EKS creates with the
+  # cluster and attaches to the managed nodes. A security group passed in
+  # ResourcesVpcConfig.SecurityGroupIds is NOT attached to the nodes: it applies
+  # to the control-plane network interfaces only. A source of that kind would
+  # not match the nodes' traffic, and the stack would still succeed.
+  # Port 443 is for the Trident backend, which calls the SVM management endpoint.
+  FsxnManagementIngressFromNodes:
+    Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupDescription: EKS worker nodes for FSx for ONTAP Trident volumes
-      VpcId: !Ref VpcId
-      Tags:
-        - Key: Name
-          Value: eks-ec2-fsxn-trident-node-sg
-        - Key: Project
-          Value: aws-container-datastore-patterns
-        # This tag lets EKS associate the SG with the cluster networking.
-        - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
-          Value: owned
+      GroupId: !Ref FsxnSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !GetAtt EksCluster.ClusterSecurityGroupId
+      Description: ONTAP REST from EKS worker nodes (Trident backend)
 
-  # Grant the nodes NFS + iSCSI to the referenced FSx for ONTAP security group.
   FsxnNfsIngressFromNodes:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
@@ -171,7 +194,7 @@ Resources:
       IpProtocol: tcp
       FromPort: 2049
       ToPort: 2049
-      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !GetAtt EksCluster.ClusterSecurityGroupId
       Description: NFS from EKS worker nodes (Trident ontap-nas)
 
   FsxnIscsiIngressFromNodes:
@@ -181,7 +204,7 @@ Resources:
       IpProtocol: tcp
       FromPort: 3260
       ToPort: 3260
-      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !GetAtt EksCluster.ClusterSecurityGroupId
       Description: iSCSI from EKS worker nodes (Trident ontap-san)
 
   # ---------- EKS cluster ----------
@@ -195,8 +218,6 @@ Resources:
         SubnetIds:
           - !Ref Subnet1Id
           - !Ref Subnet2Id
-        SecurityGroupIds:
-          - !Ref NodeSecurityGroup
       # Pod Identity uses an on-cluster agent add-on; IRSA (OIDC) is the portable
       # choice and is what the Fargate S3-access-point template also relies on.
       AccessConfig:
@@ -223,6 +244,43 @@ Resources:
         - Key: Project
           Value: aws-container-datastore-patterns
 
+  # ---------- Node preparation for iSCSI (ontap-san) ----------
+  # User data must be MIME multipart for a managed node group launch template.
+  # EKS merges its own node bootstrap with it, so no AMI is set here. The script
+  # is for Amazon Linux 2023 (dnf, systemd). If dnf cannot reach its repository
+  # the script stops, the node still joins the cluster, and the tools are missing:
+  # check /var/log/cloud-init-output.log or systemctl is-active iscsid multipathd.
+  NodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Condition: PrepareIscsi
+    Properties:
+      LaunchTemplateData:
+        UserData:
+          Fn::Base64: |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="//"
+
+            --//
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            set -euo pipefail
+            dnf install -y lsscsi iscsi-initiator-utils device-mapper-multipath
+            sed -i 's/^\(node.session.scan\).*/\1 = manual/' /etc/iscsi/iscsid.conf
+            cat > /etc/multipath.conf <<'CONF'
+            defaults {
+                find_multipaths no
+            }
+            blacklist {
+                device {
+                    vendor "NVME"
+                    product "Amazon Elastic Block Store"
+                }
+            }
+            CONF
+            systemctl enable --now iscsid multipathd
+            --//--
+
   # ---------- Managed node group (EC2 workers, required for Trident) ----------
   NodeGroup:
     Type: AWS::EKS::Nodegroup
@@ -234,6 +292,11 @@ Resources:
         - !Ref Subnet2Id
       InstanceTypes:
         - !Ref NodeInstanceType
+      LaunchTemplate: !If
+        - PrepareIscsi
+        - Id: !Ref NodeLaunchTemplate
+          Version: !GetAtt NodeLaunchTemplate.LatestVersionNumber
+        - !Ref 'AWS::NoValue'
       ScalingConfig:
         MinSize: 1
         DesiredSize: !Ref NodeDesiredSize
@@ -266,9 +329,11 @@ Outputs:
     Description: OIDC issuer URL (for IRSA role trust policies)
     Value: !GetAtt EksCluster.OpenIdConnectIssuerUrl
 
-  NodeSecurityGroupId:
-    Description: Security group ID of the worker nodes
-    Value: !Ref NodeSecurityGroup
+  ClusterSecurityGroupId:
+    Description: >
+      EKS cluster security group, the one attached to the managed nodes and the
+      source of the FSx for ONTAP ingress rules this template adds
+    Value: !GetAtt EksCluster.ClusterSecurityGroupId
 
   NextSteps:
     Description: Kubernetes objects to apply after the stack completes
@@ -276,3 +341,6 @@ Outputs:
       1) kubectl apply TridentBackendConfig (ontap-nas or ontap-san) referencing
       the FSx SVM + Secrets Manager creds; 2) kubectl apply StorageClass
       (provisioner csi.trident.netapp.io); 3) create a PVC from the StorageClass.
+      Before step 1 with ontap-san, confirm the nodes have the iSCSI tools
+      (systemctl is-active iscsid multipathd on a node, through SSM) and that
+      kubectl get pods -n trident shows the node pods running after that.
