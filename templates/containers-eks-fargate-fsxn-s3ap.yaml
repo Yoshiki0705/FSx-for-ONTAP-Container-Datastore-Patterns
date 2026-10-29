@@ -77,8 +77,12 @@ Parameters:
 
   KubernetesVersion:
     Type: String
-    Default: '1.31'
-    Description: EKS Kubernetes version
+    Description: >
+      EKS Kubernetes version, for example 1.35. There is no default: a default
+      goes stale (a version moves from standard to extended support, which is
+      billed at a higher cluster rate) without any change to this file. List the
+      versions in standard support with
+      aws eks describe-cluster-versions --query 'clusterVersions[?status==`STANDARD_SUPPORT`].clusterVersion'
     AllowedPattern: '^1\.(2[6-9]|3[0-9])$'
 
   ServiceAccountNamespace:

@@ -63,11 +63,14 @@ Trident はコントローラ Pod と各ワーカーノードの node pod(Daemon
 
 ### 4.2 CloudFormation の設計と、CloudFormation で作れないもの
 
-- CloudFormation で作れるもの: EKS クラスタ、managed node group、Trident EKS アドオン(`AWS::EKS::Addon`)、IRSA 用 OIDC プロバイダ、ノードのセキュリティグループ。FSx for ONTAP の既存セキュリティグループへ NFS(2049)と iSCSI(3260)の ingress を追加する。
+- CloudFormation で作れるもの: EKS クラスタ、managed node group、Trident EKS アドオン(`AWS::EKS::Addon`)、IRSA 用 OIDC プロバイダ、`PrepareNodesForIscsi=true` のときの iSCSI 用ノード準備(launch template)。FSx for ONTAP の既存セキュリティグループへは、EKS クラスタのセキュリティグループを送信元として、管理(443)・NFS(2049)・iSCSI(3260)の ingress を追加する。管理対象ノードグループのノードに付くのはこのクラスタ SG で、`ResourcesVpcConfig` に渡した追加 SG はコントロールプレーンの ENI 用であり、ノードには付かない [実測: 2026-10-29、ap-northeast-1、2 ノード、1 回観測]。
 - CloudFormation で作れないもの: PV を生む Kubernetes オブジェクト(TridentBackendConfig / StorageClass / PersistentVolumeClaim)。これらはスタック完了後に kubectl / Helm で適用する。
 - Trident EKS アドオンの名称・バージョンは変わりうるため、デプロイ前に `aws eks describe-addon-versions --addon-name netapp_trident-operator` で確認する。
+- `KubernetesVersion` に既定値は無い。既定値は、標準サポートから延長サポートへ移ると、テンプレートを変えなくても古くなる(2026-10-29 時点の ap-northeast-1 では 1.31 が延長サポート [実測])。`aws eks describe-cluster-versions` で標準サポートの版を確認して指定する。
 
 **iSCSI 使用時の注意(対称に記載)**: `ontap-san`(ブロック)を Amazon EBS CSI ドライバと併用する場合、ノードのマルチパス設定が EBS を掴まないよう `multipath.conf` で EBS デバイスを blacklist する必要がある(出典: 上記 EKS ユーザーガイドおよび Trident ドキュメント両方に記載)。
+
+Amazon Linux 2023 の EKS AMI には iSCSI ツール(`iscsi-initiator-utils`、`device-mapper-multipath`、`lsscsi`)が入っていない(`nfs-utils` は入っている) [実測: 2026-10-29、ap-northeast-1、2 ノード、1 回観測]。テンプレートは launch template の user data で導入し、`multipath.conf` を書く。同じコマンドを SSM Run Command で実行して SAN の PV が動作したことは確認済みだが、user data としてノードの初回起動で動くこと、および Trident の node pod が再起動なしに iSCSI を検出することは [未確認]。
 
 ---
 

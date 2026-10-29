@@ -63,11 +63,14 @@ Trident runs a controller pod plus a node pod (DaemonSet) on each worker node, s
 
 ### 4.2 CloudFormation design, and what CloudFormation cannot create
 
-- What CloudFormation can create: the EKS cluster, a managed node group, the Trident EKS add-on (`AWS::EKS::Addon`), an OIDC provider for IRSA, and the node security group. It adds NFS (2049) and iSCSI (3260) ingress to the existing FSx for ONTAP security group.
+- What CloudFormation can create: the EKS cluster, a managed node group, the Trident EKS add-on (`AWS::EKS::Addon`), an OIDC provider for IRSA, and, when `PrepareNodesForIscsi=true`, the node preparation for iSCSI (a launch template). It adds management (443), NFS (2049), and iSCSI (3260) ingress to the existing FSx for ONTAP security group, with the EKS cluster security group as the source. That cluster security group is the one attached to the managed nodes; an additional security group passed in `ResourcesVpcConfig` applies to the control-plane network interfaces and is not attached to the nodes [Verified: 2026-10-29, ap-northeast-1, 2 nodes, 1 observation].
 - What CloudFormation cannot create: the Kubernetes objects that produce a PV (TridentBackendConfig / StorageClass / PersistentVolumeClaim). These are applied with kubectl / Helm after the stack completes.
 - The Trident EKS add-on name and version can change, so confirm before deploying with `aws eks describe-addon-versions --addon-name netapp_trident-operator`.
+- `KubernetesVersion` has no default. A default goes stale without any change to the template when a version moves from standard to extended support (on 2026-10-29 in ap-northeast-1, 1.31 was in extended support [Verified]). Check the versions in standard support with `aws eks describe-cluster-versions` and pass one explicitly.
 
 **Note when using iSCSI (stated symmetrically)**: when using `ontap-san` (block) alongside the Amazon EBS CSI driver, the node multipath configuration must blacklist EBS devices in `multipath.conf` so multipath does not claim them (source: stated in both the EKS User Guide above and the Trident documentation).
+
+The Amazon Linux 2023 EKS AMI does not include the iSCSI tools (`iscsi-initiator-utils`, `device-mapper-multipath`, `lsscsi`); `nfs-utils` is included [Verified: 2026-10-29, ap-northeast-1, 2 nodes, 1 observation]. The template installs them through launch template user data and writes `multipath.conf`. Running the same commands through SSM Run Command made a SAN PV work. That the user data runs at the node's first boot, and that the Trident node pod detects iSCSI without a restart, are [Unverified].
 
 ---
 
