@@ -50,6 +50,7 @@ Fargate cannot use FSx for ONTAP through a volume mount, so it uses object acces
 - [Containerization Derivation and FSx for ONTAP Integration](docs/en/atx-containerization-fsxn-derivation.md)
 - [Verifying FSx for ONTAP Data Store Configurations on Container Targets](docs/en/atx-containerization-fsxn-storage-verification.md). Prerequisites, order, pitfalls, and cleanup for real deployment are in [7.1 Deployment prerequisites](docs/en/atx-containerization-fsxn-storage-verification.md#71-deployment-prerequisites-the-stage-before-hands-on-verification)
 - [Mounting FSx for ONTAP on ECS on EC2](docs/en/ecs-ec2-fsxn-mount.md)
+- [CloudFormation parameter files](params/README.md) — which placeholder values to replace, how to obtain each, and how to reuse an existing cluster or storage class
 
 ## Gates
 
