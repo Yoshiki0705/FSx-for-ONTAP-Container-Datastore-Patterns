@@ -4,7 +4,8 @@ Description: >
   EKS add-on, for provisioning Amazon FSx for NetApp ONTAP persistent volumes
   (NFS via ontap-nas, iSCSI via ontap-san). Cluster + node group + add-on only;
   the FSx for ONTAP file system and SVM are referenced by parameter. Static
-  verification target (cfn-lint); not deployed.
+  verification: cfn-lint. Deployment checks and their scope are in
+  docs/en/atx-containerization-fsxn-storage-verification.md.
 
 # The `Project` tag value below is a cost-allocation tag string for this
 # repository (aws-container-datastore-patterns). It is a cost tag, not a

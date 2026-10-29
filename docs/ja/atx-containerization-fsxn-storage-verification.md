@@ -70,7 +70,7 @@ Trident はコントローラ Pod と各ワーカーノードの node pod(Daemon
 
 **iSCSI 使用時の注意(対称に記載)**: `ontap-san`(ブロック)を Amazon EBS CSI ドライバと併用する場合、ノードのマルチパス設定が EBS を掴まないよう `multipath.conf` で EBS デバイスを blacklist する必要がある(出典: 上記 EKS ユーザーガイドおよび Trident ドキュメント両方に記載)。
 
-Amazon Linux 2023 の EKS AMI には iSCSI ツール(`iscsi-initiator-utils`、`device-mapper-multipath`、`lsscsi`)が入っていない(`nfs-utils` は入っている) [実測: 2026-10-29、ap-northeast-1、2 ノード、1 回観測]。テンプレートは launch template の user data で導入し、`multipath.conf` を書く。同じコマンドを SSM Run Command で実行して SAN の PV が動作したことは確認済みだが、user data としてノードの初回起動で動くこと、および Trident の node pod が再起動なしに iSCSI を検出することは [未確認]。
+Amazon Linux 2023 の EKS AMI には iSCSI ツール(`iscsi-initiator-utils`、`device-mapper-multipath`、`lsscsi`)が入っていない(`nfs-utils` は入っている) [実測: 2026-10-29、ap-northeast-1、2 ノード、1 回観測]。テンプレートは launch template の user data で導入し、`multipath.conf` を書く。同じコマンドを SSM Run Command で実行すると SAN の PV が動作した [実測]。変更後のテンプレートをデプロイすると、user data がノードの初回起動で動き、パッケージの導入、`iscsid` と `multipathd` の起動、`multipath.conf` の内容が期待どおりになり、Trident の node pod は再起動なしに両ノードで iSCSI を検出した [実測: 2026-10-29、ap-northeast-1、2 ノード、1 回観測]。ただし `iscsid` の起動と kubelet の起動は同じ秒で、順序が保証される根拠は得ていない。node pod がツールの導入より先に起動した場合は、`trident-node-linux` の DaemonSet を再起動する。
 
 ---
 
