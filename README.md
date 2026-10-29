@@ -13,7 +13,7 @@ Amazon FSx for NetApp ONTAP を、Amazon ECS / Amazon EKS 上のコンテナの�
 | 対象読者 | ECS・EKS 上のコンテナに永続データ領域を用意したい方。新規構築でも、既存コンテナのストレージ選定でも、レガシーからの移行でも構いません。想定するワークロードは、.NET Framework / .NET Core、Java・Spring Boot、Windows / SMB 依存アプリ、データベースや StatefulSet の永続化、複数 Pod で共有するコンテンツ配信・メディア処理・解析、マルチプロトコル(NFS / SMB / S3)でアクセスする共有データ基盤など。VMware からの移行はその 1 経路として扱います |
 | 扱う範囲 | ECS on EC2 の NFS/SMB ホストマウント、EKS on EC2 の NetApp Trident 永続ボリューム(PV)、ECS/EKS on Fargate の S3 Access Points 経由オブジェクトアクセス |
 | キーワード | FSx for ONTAP, Amazon ECS, Amazon EKS, AWS Fargate, NFS, SMB, NetApp Trident, S3 Access Points, CloudFormation, AWS Transform |
-| 現状 | 文献調査 + CloudFormation + 静的検証(cfn-lint)まで。実機デプロイは次段階 |
+| 現状 | 文献調査 + CloudFormation + 静的検証(cfn-lint)+ EKS on EC2 + Trident(構成 2)の小規模な実機デプロイ。ほかの構成の実機デプロイは次段階 |
 
 一般的な ONTAP 知見(ブロック PV のボリューム上限、マルチパス、ドライバ選択)は Hub の [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook) にあります。本リポジトリはコンテナのデータストア連携に絞ります。
 
