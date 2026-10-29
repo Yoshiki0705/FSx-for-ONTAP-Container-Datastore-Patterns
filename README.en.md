@@ -13,7 +13,7 @@ Configuration patterns and CloudFormation templates for using Amazon FSx for Net
 | Audience | Anyone who needs a persistent data area for containers on ECS / EKS, whether building new, choosing storage for existing containers, or migrating from legacy. Workloads in scope include .NET Framework / .NET Core, Java / Spring Boot, Windows / SMB-dependent apps, database and StatefulSet persistence, content delivery / media processing / analytics shared across multiple Pods, and multiprotocol (NFS / SMB / S3) shared-data platforms. Migration from VMware is treated as one path among these |
 | Scope | NFS/SMB host mount on ECS EC2, NetApp Trident persistent volumes (PV) on EKS EC2, and S3 Access Points object access on ECS/EKS Fargate |
 | Keywords | FSx for ONTAP, Amazon ECS, Amazon EKS, AWS Fargate, NFS, SMB, NetApp Trident, S3 Access Points, CloudFormation, AWS Transform |
-| Status | Literature research + CloudFormation + static verification (cfn-lint). Hands-on deployment is the next stage |
+| Status | Literature research + CloudFormation + static verification (cfn-lint) + a small-scale hands-on deployment of EKS on EC2 + Trident (config 2). Hands-on deployment of the other configs is the next stage |
 
 General ONTAP knowledge (block PV volume limits, multipath, driver choice) lives in the hub, [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook). This repository focuses on the container data-store integration.
 

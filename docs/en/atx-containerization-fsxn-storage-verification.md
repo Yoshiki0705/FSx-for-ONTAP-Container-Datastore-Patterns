@@ -2,8 +2,8 @@
 
 **Purpose**: Determine from primary sources the feasibility of four ways to use Amazon FSx for NetApp ONTAP as a data area on container runtimes after AWS Transform containerization (ECS on EC2 / EKS on EC2 / ECS on Fargate / EKS on Fargate), and express the feasible ones as CloudFormation templates taken through static verification.
 
-**Last Updated**: 2026-09-22
-**Status**: Literature research + CloudFormation authoring + static verification (cfn-lint). No hands-on deployment (next stage)
+**Last Updated**: 2026-10-29
+**Status**: Literature research + CloudFormation authoring + static verification (cfn-lint) + a small-scale hands-on deployment of config 2 (4.3). No hands-on deployment of configs 1, 3, and 4 (next stage)
 
 Related: [Containerization (ECS / EKS) Derivation and FSx for ONTAP Integration](atx-containerization-fsxn-derivation.md). This memo follows that research to express "if it can be used, how to configure it" in CloudFormation.
 
@@ -16,7 +16,7 @@ All four configurations can use FSx for ONTAP as a data area. But **the access f
 | # | Runtime | FSx for ONTAP access form | App change | CloudFormation | Tier |
 |---|---|---|---|---|---|
 | 1 | ECS on EC2 | NFS mounted on the EC2 host → bind mount | None (keeps file I/O) | [Authored](../../templates/containers-ecs-ec2-fsxn-nfs.yaml) | [Documented] |
-| 2 | EKS on EC2 | Trident CSI PV (NFS `ontap-nas` / iSCSI `ontap-san`) | None (keeps file I/O) | [Authored](../../templates/containers-eks-ec2-fsxn-trident.yaml) | [Documented] |
+| 2 | EKS on EC2 | Trident CSI PV (NFS `ontap-nas` / iSCSI `ontap-san`) | None (keeps file I/O) | [Authored](../../templates/containers-eks-ec2-fsxn-trident.yaml) | [Documented] · [Verified] (4.3) |
 | 3 | ECS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-ecs-fargate-fsxn-s3ap.yaml) | [Documented] |
 | 4 | EKS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-eks-fargate-fsxn-s3ap.yaml) | [Documented] |
 
@@ -32,7 +32,7 @@ All four configurations can use FSx for ONTAP as a data area. But **the access f
 | **[Documented]** | Stated in AWS / NetApp official documentation. Source URL included. Does not imply hands-on confirmation |
 | **[Unverified]** | Not executed and not corroborated by public information. Investigation date and scope included |
 
-The CloudFormation in this memo passes static verification (cfn-lint) as [Verified], but **it has not been verified to deploy and work** [Unverified].
+The CloudFormation in this memo passes static verification (cfn-lint) as [Verified]. Only config 2 was deployed and checked, at small scale (4.3). **Configs 1, 3, and 4 have not been verified to deploy and work** [Unverified].
 
 ---
 
@@ -71,6 +71,35 @@ Trident runs a controller pod plus a node pod (DaemonSet) on each worker node, s
 **Note when using iSCSI (stated symmetrically)**: when using `ontap-san` (block) alongside the Amazon EBS CSI driver, the node multipath configuration must blacklist EBS devices in `multipath.conf` so multipath does not claim them (source: stated in both the EKS User Guide above and the Trident documentation).
 
 The Amazon Linux 2023 EKS AMI does not include the iSCSI tools (`iscsi-initiator-utils`, `device-mapper-multipath`, `lsscsi`); `nfs-utils` is included [Verified: 2026-10-29, ap-northeast-1, 2 nodes, 1 observation]. The template installs them through launch template user data and writes `multipath.conf`. Running the same commands through SSM Run Command made a SAN PV work [Verified]. Deploying the changed template, the user data ran at the nodes' first boot: the packages were installed, `iscsid` and `multipathd` were active, `multipath.conf` had the expected content, and the Trident node pods detected iSCSI on both nodes without a restart [Verified: 2026-10-29, ap-northeast-1, 2 nodes, 1 observation]. The `iscsid` start and the kubelet start fell in the same second, so no ordering is guaranteed. If a node pod started before the tools were installed, restart the `trident-node-linux` DaemonSet.
+
+### 4.3 Hands-on results for config 2
+
+**Scope**: 2026-10-29, ap-northeast-1, an existing Single-AZ FSx for ONTAP file system, one observation each. This is a small-scale check. It does not cover sustained operation, performance, Multi-AZ failover, or consistency when several pods write the same file at once.
+
+| Item | Detail |
+|---|---|
+| Kubernetes | v1.35 (a version in standard support) |
+| Nodes | 2 × m5.large (different AZs), Amazon Linux 2023 |
+| Trident add-on | `netapp_trident-operator` v26.6.2-eksbuild.1 (the default). The ONTAP version was not retrieved |
+| SVM | A dedicated SVM created for the check, with its own `vsadmin` |
+| Backend authentication | A Kubernetes Secret. Referencing Secrets Manager (`awsarn`) needs extra IRSA setup and was not tried |
+| StorageClass and PVC | `ontap-san` and `ontap-nas`, reclaim policy `Delete`, one 1 GiB PVC each |
+
+| Type | Check | Result [Verified] |
+|---|---|---|
+| iSCSI / RWO | PVC provisioning | `Bound` in about 10 seconds (`ReadWriteOnce`) |
+| iSCSI / RWO | After writing a marker, after a pod restart (same node), and after cordoning the node and deleting the pod (other node, other AZ) | The marker matched all three times. The new pod started only after the old pod had finished deleting. Both nodes mounted the same multipath device (ext4) |
+| NFS / RWX | PVC provisioning | `Bound` in about 10 seconds (`ReadWriteMany`) |
+| NFS / RWX | Pod B on another node reads what pod A wrote | Matched (NFS v4.2) |
+| NFS / RWX | After restarting the Deployment so every pod was new | Matched. An append made after the restart was readable from another pod |
+
+**Scope of the observation**: that the SAN and NAS data persist was observed on the revision before the launch template of 4.2 was added. The node preparation was then applied by hand with SSM Run Command. With the changed template, only the node preparation was checked and no PV was created (4.2).
+
+**Teardown observation**: with reclaim policy `Delete`, deleting the PVC removed the LUN and the volume from ONTAP (checked with the ONTAP REST API). Ten seconds after deleting the SAN PVC, the SAN volume was still present, so the deletion is asynchronous. The file system's backup count was the same before and after teardown, and no final backup was created. This file system did not return a retention period for automatic backups, so environments with automatic backups enabled are unchecked.
+
+**A note on the check Deployment**: combining a required anti-affinity that puts pods on different nodes with the default rolling update (`maxSurge` 25%) stalled the update when the number of nodes equalled the number of pods, because the extra pod had nowhere to go. Setting `maxSurge: 0` and `maxUnavailable: 1` resolved it.
+
+The difference between the FSx API and the ONTAP volume list is described in 7.1.
 
 ---
 
@@ -123,12 +152,12 @@ Because access is via the S3 SDK, the app must be written for object access. It 
 
 Confirmed that `make cfn-lint` (cfn-lint, `templates/*.yaml`) passes with exit 0, covering the four templates plus the two existing ones. A `params/*.example.json` with dummy values was prepared for each template, and the keys were confirmed to match the template parameters (the new-network CIDR parameters in Config 1 have defaults and are omitted when referencing existing resources).
 
-**What this verification does not say**: it has not been verified to deploy and work. The following are for hands-on verification (next stage) in particular.
+**What this verification does not say**: configs other than 2 have not been verified to deploy and work. The config 2 results are in 4.3. The following are the items to confirm on real infrastructure; V1 and V2 are already confirmed for config 2.
 
 | # | Item | Research / verification state (2026-09-22) |
 |---|---|---|
-| V1 | Deploying the four configurations and data connectivity | Not done. Only cfn-lint is [Verified] |
-| V2 | Current Trident EKS add-on name and version | To confirm with describe-addon-versions [Unverified] |
+| V1 | Deploying the four configurations and data connectivity | Config 2 was checked on 2026-10-29 (4.3) [Verified]. Configs 1, 3, and 4 are not done; only cfn-lint is [Verified] |
+| V2 | Current Trident EKS add-on name and version | On 2026-10-29 in ap-northeast-1, `netapp_trident-operator` existed, the default was v26.6.2-eksbuild.1, and the highest supported Kubernetes version was 1.36 [Verified]. Names and versions change, so reconfirm before deploying |
 | V3 | Whether EKS Pod Identity works on Fargate | This memo uses IRSA. Pod Identity on Fargate is unconfirmed [Unverified] |
 | V4 | Mapping of the S3 access point UNIX user to ONTAP-side permissions | Permission design to confirm on real hardware [Unverified] |
 | V5 | Effective throughput via the S3 access point | Docs state "depends on the file system's provisioned throughput". Not measured [Unverified] |
@@ -148,7 +177,7 @@ Before confirming V1–V5 on real infrastructure, these are the prerequisites, o
 
 | Preparation | Related unverified item | How to confirm |
 |---|---|---|
-| Current Trident EKS add-on name / version | V2 | `aws eks describe-addon-versions --addon-name netapp_trident-operator`. Docs are now on the Trident 25.10 line, ahead of this memo's 25.02 reference [Documented] |
+| Current Trident EKS add-on name / version | V2 | `aws eks describe-addon-versions --addon-name netapp_trident-operator`. On 2026-10-29 in ap-northeast-1 the default was v26.6.2-eksbuild.1, ahead of this memo's 25.02 reference [Verified] |
 | S3 Access Point dual-layer authorization (IAM + file-system-level UNIX / Windows user) | V4 | Design the mapping between the access point's UNIX user and the ONTAP file permissions on real infra [Documented] |
 | Availability in the target region | V1 in general | Second-generation FSx for ONTAP expanded to four regions + GovCloud in 2026-04. S3 Access Points support Tokyo (ap-northeast-1) [Documented]. Confirm availability in the region you use |
 | IRSA trust condition (EKS Fargate) | V3 | Add `sub` / `aud` to the trust policy manually after cluster creation (5.2). Do not leave it unset on a shared account |
@@ -160,8 +189,11 @@ Before confirming V1–V5 on real infrastructure, these are the prerequisites, o
 - The mount is an instance boot-time step, not something a task creates. If a task starts before the mount is present, the bind-mount target is empty (already noted in 3.2). Treat the mount as a precondition of startup.
 - When using `ontap-san` (iSCSI) alongside the Amazon EBS CSI driver, blacklist EBS devices in `multipath.conf` or the node multipath will claim EBS (already noted in 4.2).
 - Trident's StorageClass / PVC / TridentBackendConfig cannot be created by CloudFormation; apply them with kubectl / Helm after the stack completes (already noted in 4.2).
+- The FSx API reflects the volumes that Trident creates on the ONTAP side with a delay. If you check for leftovers after teardown with the FSx API alone, you read "absent" right after creation and "still there" right after deletion. Check with the ONTAP REST API (reached from inside the VPC through the management LIF). The FSx API did not list the volumes at 23 seconds and at 11 minutes after creation, and listed them at 26 minutes. After the volumes were deleted on ONTAP, the FSx API still listed them at 41 minutes and no longer did at 44 minutes [Verified: 2026-10-29, ap-northeast-1, 1 observation]. While the FSx API showed a non-root volume, deleting the SVM was rejected with `BadRequest`.
 
 **Cleanup (a verification environment is exactly where you must delete)**: the main resources that keep charging are the FSx for ONTAP file system (hourly for SSD capacity + provisioned throughput), the EKS cluster, EC2 nodes / container instances, and NAT / VPC endpoints. After verification, delete the stack, and do not forget the FSx for ONTAP created outside the templates. A verification resource you cannot delete becomes a long-running charge and blocks operations on resources beside it.
+
+**Teardown order with Trident**: before deleting the stack, delete the application Deployment, the PVCs (SAN and NAS separately), the StorageClasses, and the TridentBackendConfigs in that order, and confirm with the ONTAP REST API that the LUN and the volumes are gone from ONTAP. Then delete the stack. If you created a dedicated SVM for the check, delete it once the FSx API no longer shows a non-root volume.
 
 ---
 
