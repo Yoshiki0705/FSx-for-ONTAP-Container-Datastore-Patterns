@@ -70,17 +70,18 @@ Trident runs a controller pod plus a node pod (DaemonSet) on each worker node, s
 
 **Note when using iSCSI (stated symmetrically)**: when using `ontap-san` (block) alongside the Amazon EBS CSI driver, the node multipath configuration must blacklist EBS devices in `multipath.conf` so multipath does not claim them (source: stated in both the EKS User Guide above and the Trident documentation).
 
-The Amazon Linux 2023 EKS AMI does not include the iSCSI tools (`iscsi-initiator-utils`, `device-mapper-multipath`, `lsscsi`); `nfs-utils` is included [Verified: 2026-10-29, ap-northeast-1, 2 nodes, 1 observation]. The template installs them through launch template user data and writes `multipath.conf`. Running the same commands through SSM Run Command made a SAN PV work [Verified]. Deploying the changed template, the user data ran at the nodes' first boot: the packages were installed, `iscsid` and `multipathd` were active, `multipath.conf` had the expected content, and the Trident node pods detected iSCSI on both nodes without a restart [Verified: 2026-10-29, ap-northeast-1, 2 nodes, 1 observation]. The `iscsid` start and the kubelet start fell in the same second, so no ordering is guaranteed. If a node pod started before the tools were installed, restart the `trident-node-linux` DaemonSet.
+The Amazon Linux 2023 EKS AMI does not include the iSCSI tools (`iscsi-initiator-utils`, `device-mapper-multipath`, `lsscsi`); `nfs-utils` is included [Verified: 2026-10-29, ap-northeast-1, 2 nodes, 1 observation]. The template installs them through launch template user data and writes `multipath.conf`. Running the same commands through SSM Run Command made a SAN PV work [Verified]. Deploying the changed template, the user data ran at the nodes' first boot: the packages were installed, `iscsid` and `multipathd` were active, `multipath.conf` had the expected content, and the Trident node pods detected iSCSI on both nodes without a restart [Verified: 2026-10-29, ap-northeast-1, 2 nodes, 1 observation]. A separate deployment on the same day reached the same state with no manual step, and SAN and NAS PVs kept their data (4.3). The `iscsid` start and the kubelet start fell in the same second, so no ordering is guaranteed. If a node pod started before the tools were installed, restart the `trident-node-linux` DaemonSet.
 
 ### 4.3 Hands-on results for config 2
 
-**Scope**: 2026-10-29, ap-northeast-1, an existing Single-AZ FSx for ONTAP file system, one observation each. This is a small-scale check. It does not cover sustained operation, performance, Multi-AZ failover, or consistency when several pods write the same file at once.
+**Scope**: two runs on 2026-10-29, ap-northeast-1, an existing Single-AZ FSx for ONTAP file system, one observation each. The first run used the revision before the launch template of 4.2 was added, the second the revision after it. This is a small-scale check. It does not cover sustained operation, performance, Multi-AZ failover, or consistency when several pods write the same file at once.
 
 | Item | Detail |
 |---|---|
 | Kubernetes | v1.35 (a version in standard support) |
 | Nodes | 2 × m5.large (different AZs), Amazon Linux 2023 |
-| Trident add-on | `netapp_trident-operator` v26.6.2-eksbuild.1 (the default). The ONTAP version was not retrieved |
+| Trident add-on | `netapp_trident-operator` v26.6.2-eksbuild.1 (the default) |
+| ONTAP | NetApp Release 9.18.1P6 (retrieved in the second run; not retrieved in the first) |
 | SVM | A dedicated SVM created for the check, with its own `vsadmin` |
 | Backend authentication | A Kubernetes Secret. Referencing Secrets Manager (`awsarn`) needs extra IRSA setup and was not tried |
 | StorageClass and PVC | `ontap-san` and `ontap-nas`, reclaim policy `Delete`, one 1 GiB PVC each |
@@ -93,13 +94,23 @@ The Amazon Linux 2023 EKS AMI does not include the iSCSI tools (`iscsi-initiator
 | NFS / RWX | Pod B on another node reads what pod A wrote | Matched (NFS v4.2) |
 | NFS / RWX | After restarting the Deployment so every pod was new | Matched. An append made after the restart was readable from another pod |
 
-**Scope of the observation**: that the SAN and NAS data persist was observed on the revision before the launch template of 4.2 was added. The node preparation was then applied by hand with SSM Run Command. With the changed template, only the node preparation was checked and no PV was created (4.2).
+**Scope of the observation**: the results in the table above were the same in both runs. In the first run the node preparation was applied by hand with SSM Run Command. In the second run there was no manual step: the Trident node pods restarted 0 times and both nodes could use iSCSI (clean in `tridentctl get node`).
+
+| Type | Check (second run) | Result [Verified] |
+|---|---|---|
+| Importing an existing volume | A pod without a PVC writes a file to a volume created with the FSx API. A PVC with the annotations `trident.netapp.io/importOriginalName` and `trident.netapp.io/importBackendUUID` imports it | `Bound` in about 10 seconds. A pod read the file written before the import. On ONTAP the volume was renamed to `trident_pvc_…`; its UUID and junction path did not change |
+| Import and reclaim policy | Import with a StorageClass whose reclaim policy is `Retain`, then delete the PVC and the PV object | The volume stayed on ONTAP. Trident kept its record of the volume, and deleting the TridentBackendConfig stayed at `Backend is in a deleting state`. Removing the record with `tridentctl delete volume <PV name>` let the deletion finish |
+| Wrong credentials | Create a TridentBackendConfig that references a Secret with a wrong password | `Failed`, `401 (Unauthorized): incorrect or missing credentials`. The PVC stayed `Pending` with the event `no available backends for storage class` |
+| Management LIF unreachable | Give an unused IP as the management LIF | `Failed`, `connect: no route to host`. The PVC stayed `Pending` with the same event |
+| Changing the Secret of a working backend | Replace the correct password with a wrong one | The backend stayed `Success` and kept using the old credentials until it was reloaded. A reload (a change to the TridentBackendConfig spec) turned it `Failed`. Reads and writes of existing pods never stopped; only provisioning of new PVCs stopped |
+
+**SVM user lockout**: after the two failure checks above, authentication returned `401` (ONTAP error code 6691623) even with the correct password restored. `vsadmin` was locked on ONTAP. The SAN backend, which uses the same `vsadmin`, also turned `Failed`. The lock did not clear by itself. After unlocking it as the file system administrator (`fsxadmin`), both backends returned to `Success` and the waiting PVCs became `Bound`. The likely cause is repeated authentication with a wrong password, from the wrong-credentials check and the reloads. The lockout threshold and the moment of locking were not read. To check failure shapes, use a separate SVM user or run them after the other checks.
 
 **Teardown observation**: with reclaim policy `Delete`, deleting the PVC removed the LUN and the volume from ONTAP (checked with the ONTAP REST API). Ten seconds after deleting the SAN PVC, the SAN volume was still present, so the deletion is asynchronous. The file system's backup count was the same before and after teardown, and no final backup was created. This file system did not return a retention period for automatic backups, so environments with automatic backups enabled are unchecked.
 
 **A note on the check Deployment**: combining a required anti-affinity that puts pods on different nodes with the default rolling update (`maxSurge` 25%) stalled the update when the number of nodes equalled the number of pods, because the extra pod had nowhere to go. Setting `maxSurge: 0` and `maxUnavailable: 1` resolved it.
 
-The difference between the FSx API and the ONTAP volume list is described in 7.1.
+The difference between the FSx API and the ONTAP volume list is described in 7.1. In the second run the Trident volumes did not appear in the FSx API when the SVM was deleted, about 55 minutes after creation, and the SVM deletion was accepted on the first request. Appearance and disappearance times were not measured in the second run.
 
 ---
 
@@ -193,7 +204,7 @@ Before confirming V1–V5 on real infrastructure, these are the prerequisites, o
 
 **Cleanup (a verification environment is exactly where you must delete)**: the main resources that keep charging are the FSx for ONTAP file system (hourly for SSD capacity + provisioned throughput), the EKS cluster, EC2 nodes / container instances, and NAT / VPC endpoints. After verification, delete the stack, and do not forget the FSx for ONTAP created outside the templates. A verification resource you cannot delete becomes a long-running charge and blocks operations on resources beside it.
 
-**Teardown order with Trident**: before deleting the stack, delete the application Deployment, the PVCs (SAN and NAS separately), the StorageClasses, and the TridentBackendConfigs in that order, and confirm with the ONTAP REST API that the LUN and the volumes are gone from ONTAP. Then delete the stack. If you created a dedicated SVM for the check, delete it once the FSx API no longer shows a non-root volume.
+**Teardown order with Trident**: before deleting the stack, delete the application Deployment, the PVCs (SAN and NAS separately), the StorageClasses, and the TridentBackendConfigs in that order. If a PV has reclaim policy `Retain`, deleting the PV object leaves Trident's record, so remove it with `tridentctl delete volume` before deleting the TridentBackendConfig (4.3). Then confirm with the ONTAP REST API that the LUN and the volumes are gone from ONTAP. Then delete the stack. If you created a dedicated SVM for the check, delete it once the FSx API no longer shows a non-root volume.
 
 ---
 
