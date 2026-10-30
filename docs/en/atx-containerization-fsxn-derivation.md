@@ -3,7 +3,7 @@
 **Purpose**: Determine, from primary sources, whether the Amazon FSx for NetApp ONTAP integration verified in this repository applies when VMware workloads are migrated to Amazon ECS / Amazon EKS via the AWS Transform containerization capability (announced May 2026). Organize the difference from the EC2 rehost path, Fargate availability, and the path for using FSx for ONTAP as a persistent volume (PV) / data store from containers after modernization.
 
 **Last Updated**: 2026-09-22
-**Status**: Literature research. No hands-on verification performed (unverified scope marked with [Unverified] throughout)
+**Status**: Literature research. No hands-on verification performed (scope not confirmed on real infrastructure is marked [Not measured] throughout)
 
 ---
 
@@ -28,11 +28,11 @@
 
 | Tag | Meaning |
 |---|---|
-| **[Verified]** | Actually executed and confirmed in this repository (source is an existing verification report) |
-| **[Documented]** | Stated in AWS / NetApp official documentation. Source URL included. Does not imply hands-on confirmation |
-| **[Unverified]** | Not executed and not corroborated by public information. Investigation date and scope included |
+| **[Tested]** | Executed and confirmed on real infrastructure in this repository (source is an existing verification report) |
+| **[Documented]** | Stated in AWS / NetApp docs, not verified in a real environment. Source URL included |
+| **[Not measured]** | Not executed, or out of scope here. Investigation date and scope included |
 
-"No mention found in public documentation" is a fact about the state of the documentation, not about product behavior. [Unverified] items carry **when and where** the search was done.
+"No mention found in public documentation" is a fact about the state of the documentation, not about product behavior. [Not measured] items carry **when and where** the search was done.
 
 ---
 
@@ -68,7 +68,7 @@ Because containerization analyzes source code, the supported languages and frame
 | Preview types | Desktop (WinForms / WPF), mobile (Xamarin), ASMX web services |
 | Not transformed | Blazor UI components, Win32 DLLs without core-compatible libraries, repositories without a .NET solution, web site projects without a project file |
 
-The .NET agent is limited to .NET-to-.NET transformation; non-.NET (e.g., Web Forms → React) uses AWS Transform custom. Containerization itself is source-code analysis and is not limited to .NET, but **as of this research (2026-09-22) an exhaustive list of supported containerization languages was not found in official documentation [Unverified]** (searched: the containerization user guide and the .NET user guide above).
+The .NET agent is limited to .NET-to-.NET transformation; non-.NET (e.g., Web Forms → React) uses AWS Transform custom. Containerization itself is source-code analysis and is not limited to .NET, but **as of this research (2026-09-22) an exhaustive list of supported containerization languages was not found in official documentation [Not measured]** (searched: the containerization user guide and the .NET user guide above).
 
 ### 3.3 Deployment targets and Fargate availability [Documented]
 
@@ -76,13 +76,13 @@ The description of the AWS managed policy `AWSTransformApplicationECSDeploymentP
 
 The permissions this policy grants are limited to ECS clusters / services / task definitions, ECR, CloudWatch Logs, and `iam:PassRole` (ECS task role / execution role). **No volume-related permissions for EBS, EFS, or FSx for ONTAP are included.** The ECS deployment AWS Transform generates therefore assumes a stateless Fargate configuration; provisioning persistent storage is outside the scope of this policy.
 
-### 3.4 What is not in the containerization scope [Documented + Unverified]
+### 3.4 What is not in the containerization scope [Documented + Not measured]
 
 The containerization workflow has nine steps (review security disclaimer → clone source → containerize → review artifacts → publish images → generate IaC → deploy test infrastructure → clean up test infrastructure → deploy cutover infrastructure), and none of them configure a persistent volume / data store.
 
-**No statement that the AWS Transform containerization outputs (Helm charts / Terraform modules) emit FSx for ONTAP PV / PVC / StorageClass was found as of this research (2026-09-22) [Unverified]** (searched: the containerization user guide, the ECS deployment managed policy). Treating persistent storage as configured separately, on the destination cluster, is the reasonable reading.
+**No statement that the AWS Transform containerization outputs (Helm charts / Terraform modules) emit FSx for ONTAP PV / PVC / StorageClass was found as of this research (2026-09-22) [Not measured]** (searched: the containerization user guide, the ECS deployment managed policy). Treating persistent storage as configured separately, on the destination cluster, is the reasonable reading.
 
-### 3.5 Answers to the follow-up questions (input types and mount configuration) [Documented + Unverified]
+### 3.5 Answers to the follow-up questions (input types and mount configuration) [Documented + Not measured]
 
 The following answers two specific questions from primary sources. Sources are the launch blog [Containerize during migration](https://aws.amazon.com/blogs/migration-and-modernization/containerize-during-migration-replatform-applications-to-containers-with-aws-transform/) and the documents in 3.1–3.4.
 
@@ -99,7 +99,7 @@ No. The input is always **source code** (a Git repository via CodeConnections or
 
 Question: when containerizing to ECS can it specify an NFS/SMB mount point, and to EKS can it specify FSx for ONTAP as a PV (within the generated artifacts)?
 
-As of this research (2026-09-22), that configuration was not found in the artifacts AWS Transform auto-generates [Unverified]. The ECS artifacts the launch blog illustrates are an ECS cluster (Fargate) + Application Load Balancer + Secrets Manager placeholders + CloudWatch log group; no NFS/SMB mount point or persistent volume is included. The EKS artifacts are Helm charts, stated to **require an existing EKS cluster**, with no mention of auto-generating a PV / StorageClass.
+As of this research (2026-09-22), that configuration was not found in the artifacts AWS Transform auto-generates [Not measured]. The ECS artifacts the launch blog illustrates are an ECS cluster (Fargate) + Application Load Balancer + Secrets Manager placeholders + CloudWatch log group; no NFS/SMB mount point or persistent volume is included. The EKS artifacts are Helm charts, stated to **require an existing EKS cluster**, with no mention of auto-generating a PV / StorageClass.
 
 Therefore an NFS/SMB mount (ECS) or specifying FSx for ONTAP as a PV (EKS) must be built into the destination cluster separately, outside the containerization artifacts (Section 4). The artifacts can be adjusted via chat, so there is room to extend the templates by hand, but **there is no default artifact that specifies FSx for ONTAP as a PV**.
 
@@ -172,13 +172,13 @@ For FSx for ONTAP block (iSCSI LUN) usage, the database data store is the repres
 
 ## 6. Workload Type × Destination × Storage Pattern Fitness Matrix
 
-Rows are the nature of the source workload, columns are the destination runtime, and cells show which storage pattern lets FSx for ONTAP be used. All based on public documentation [Documented]. Hands-on reproduction in this repository exists only for EC2 rehost [Verified]; the container paths are [Unverified].
+Rows are the nature of the source workload, columns are the destination runtime, and cells show which storage pattern lets FSx for ONTAP be used. All based on public documentation [Documented]. Hands-on reproduction in this repository exists only for EC2 rehost [Tested]; the container paths are [Not measured].
 
 Legend: **NFS PV** = Trident `ontap-nas` / **iSCSI PV** = Trident `ontap-san` / **iSCSI (guest)** = iSCSI mount inside the guest OS / **host NFS/SMB** = bind mount via the ECS EC2 host / **✕** = no FSx for ONTAP integration
 
 | Source workload | EC2 rehost (MGN) | EKS (EC2 workers) | EKS Fargate | ECS (EC2 launch) | ECS Fargate |
 |---|---|---|---|---|---|
-| Database (dedicated disk required) | iSCSI (guest) [Verified] | iSCSI PV / NFS PV [Documented] | ✕ (no CSI) [Documented] | host NFS [Documented] | ✕ (cannot attach) [Documented] |
+| Database (dedicated disk required) | iSCSI (guest) [Tested] | iSCSI PV / NFS PV [Documented] | ✕ (no CSI) [Documented] | host NFS [Documented] | ✕ (cannot attach) [Documented] |
 | Stateful .NET / Java app (single writer) | iSCSI (guest) [Documented] | iSCSI PV [Documented] | ✕ [Documented] | host NFS [Documented] | ✕ [Documented] |
 | Horizontally scaled web app with shared data | iSCSI (guest) [Documented] | NFS PV (RWX) [Documented] | ✕ [Documented] | host NFS [Documented] | ✕ (EFS only) [Documented] |
 | Stateless web / API | Rarely applicable (no data) | Optional (unused if not needed) | No persistence needed [Documented] | Optional | Fargate fits (no persistence needed) [Documented] |
@@ -205,13 +205,13 @@ This path has room to be split into a separate repository / Kiro project from th
 
 ---
 
-## 8. Unverified Items
+## 8. Not measured items
 
 | # | Item | Scope searched (2026-09-22) |
 |---|---|---|
 | C1 | Exhaustive list of containerization-supported languages | Checked the containerization user guide and the .NET user guide. The .NET range is documented, but a full list of containerization languages was not found |
 | C2 | Whether AWS Transform-generated IaC emits FSx for ONTAP PVs / NFS-SMB mounts | Checked the containerization user guide, the ECS deployment managed policy, and the launch blog's generated-artifact example (ECS = cluster + ALB + Secrets Manager + CloudWatch). No persistent-storage / mount configuration stated. The reading is that it does not emit one (3.5) |
-| C3 | Hands-on behavior of container-path FSx for ONTAP integration | Not performed this session. Only EC2 rehost is [Verified] via the existing report |
+| C3 | Hands-on behavior of container-path FSx for ONTAP integration | Not performed this session. Only EC2 rehost is [Tested] via the existing report |
 | C4 | Official statement that Trident is unsupported on Fargate | That Trident requires a node pod (DaemonSet) and that Fargate disallows DaemonSets / privileged pods each have sources. A single official sentence stating "Trident is unsupported on Fargate" was not found |
 
 ---
@@ -283,7 +283,7 @@ entry is AWS Transform or Shift Toolkit. That is, Fargate cannot use FSx for ONT
 data area; you choose EC2 worker nodes / the EC2 launch type, and the same trade-off holds on this
 path too.
 
-### 9.4 Unverified items (section 9)
+### 9.4 Not measured items (section 9)
 
 | # | Item | Scope searched (2026-09-23) |
 |---|---|---|
