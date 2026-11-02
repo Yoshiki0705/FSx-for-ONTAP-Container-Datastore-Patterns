@@ -29,3 +29,7 @@ venv/
 
 # Node
 node_modules/
+
+# Filled-in CloudFormation parameter copies (keep only *.example.json)
+params/*.json
+!params/*.example.json

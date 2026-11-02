@@ -21,7 +21,7 @@
   },
   {
     "ParameterKey": "KubernetesVersion",
-    "ParameterValue": "1.31"
+    "ParameterValue": "1.35"
   },
   {
     "ParameterKey": "ServiceAccountNamespace",

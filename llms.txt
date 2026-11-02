@@ -15,8 +15,8 @@ structure. The reach form to FSx for ONTAP differs by launch type, and the repos
 distinction explicit: EC2 launch types mount files (NFS, SMB, or iSCSI persistent volumes), while
 Fargate cannot mount a volume and reaches the data as objects through S3 Access Points. Each claim
 carries an evidence tag — reproduced here, stated in vendor or AWS documentation, or unverified — and
-the templates are passed through cfn-lint only, not deployed, which the documents say inline rather
-than imply.
+the templates are passed through cfn-lint, and only the EKS on EC2 + Trident template has been
+deployed, at small scale; the documents say so inline rather than imply it.
 
 ## Overview
 

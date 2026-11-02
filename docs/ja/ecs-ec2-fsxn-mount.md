@@ -17,9 +17,9 @@ ECS on EC2 で FSx for ONTAP を使う確立した方法は、**EC2 コンテナ
 |---|---|---|---|
 | Linux + NFS | ホストが NFS マウント → `host.sourcePath` で bind mount | Linux | [文書] |
 | Windows + SMB | ホストが SMB グローバルマッピング → bind mount | Windows | [文書] |
-| Trident(Docker プラグイン)経由 | ホストの Docker ボリュームドライバとして Trident → タスク定義の `dockerVolumeConfiguration` で参照 | Linux | [未確認] |
+| Trident(Docker プラグイン)経由 | ホストの Docker ボリュームドライバとして Trident → タスク定義の `dockerVolumeConfiguration` で参照 | Linux | [未測定] |
 
-**Trident についての訂正**: 本プロジェクトの過去のやり取りで「Trident は Kubernetes 専用であり ECS では使えない」と記述したが、これは誤りである。Trident は Docker ボリュームプラグインとしても提供されており、Kubernetes に依存しない(3 章)。ECS on EC2 での組み込みは原理的に成立しうるが、AWS / NetApp のどちらも「ECS + Trident Docker プラグイン」を公式にサポート/テスト済みと明記した記載は本調査時点(2026-09-22)で見つからなかった。よって [未確認] とし、実機検証を次段階に置く(5 章)。
+**Trident についての訂正**: 本プロジェクトの過去のやり取りで「Trident は Kubernetes 専用であり ECS では使えない」と記述したが、これは誤りである。Trident は Docker ボリュームプラグインとしても提供されており、Kubernetes に依存しない(3 章)。ECS on EC2 での組み込みは原理的に成立しうるが、AWS / NetApp のどちらも「ECS + Trident Docker プラグイン」を公式にサポート/テスト済みと明記した記載は本調査時点(2026-09-22)で見つからなかった。よって [未測定] とし、実機検証を次段階に置く(5 章)。
 
 ---
 
@@ -27,9 +27,9 @@ ECS on EC2 で FSx for ONTAP を使う確立した方法は、**EC2 コンテナ
 
 | タグ | 意味 |
 |---|---|
-| **[実測]** | 本リポジトリで実際に実行して確認済み |
-| **[文書]** | AWS / NetApp 公式ドキュメントの記載。出典 URL を併記。実機確認は意味しない |
-| **[未確認]** | 実行しておらず公開情報でも裏取りできていない。調査日と調査範囲を併記 |
+| **[実測]** | 本リポジトリで実機で実行して確認済み |
+| **[文書]** | AWS / NetApp のドキュメント上の記載、実機では未確認。出典 URL を併記 |
+| **[未測定]** | 実行していない、またはこの範囲では扱っていない。調査日と調査範囲を併記 |
 
 ---
 
@@ -67,16 +67,16 @@ sudo mount -t nfs -o nfsvers=4.1 svm-dns-name:/volume-junction-path /fsxontap
 - NFS はポート 2049、SMB はポート 445 を、ECS インスタンスから FSx for ONTAP のセキュリティグループへ許可する。
 - FSx for ONTAP と ECS インスタンスは相互に到達可能な VPC に配置する。SVM のエンドポイント(DNS / IP)への到達性が前提。
 
-### 3.5 マウントのライフサイクル [文書 + 未確認]
+### 3.5 マウントのライフサイクル [文書 + 未測定]
 
 - マウントはコンテナインスタンスの処理(user-data / `fstab`)であり、タスクが作るものではない。
-- **マウント前にタスクが起動すると、bind mount 先が空になる** [文書の含意]。マウントを起動の前提条件として扱う。マウント失敗時にタスクをどう扱うか(再試行・ヘルスチェック)は運用設計側の課題で、実挙動は未検証 [未確認]。
+- **マウント前にタスクが起動すると、bind mount 先が空になる** [文書の含意]。マウントを起動の前提条件として扱う。マウント失敗時にタスクをどう扱うか(再試行・ヘルスチェック)は運用設計側の課題で、実挙動は未検証 [未測定]。
 
-### 3.6 認証と権限 [文書 + 未確認]
+### 3.6 認証と権限 [文書 + 未測定]
 
 - Linux + NFS: ホストが NFS でマウントするため、ファイルアクセスはホストの UID/GID と ONTAP のエクスポートポリシーに従う。タスクロール(IAM)はマウント自体には関与しない。
 - Windows + SMB: SVM が Active Directory に参加し、SMB 認証は AD 資格情報で行う。AD 参加の前提は別リポジトリの [AD 統合の手順](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/ja/ad-integration-for-migration.md) を参照。
-- NFS の UID/GID マッピングと ONTAP 側権限の具体的な対応は、実機で確認する必要がある [未確認]。
+- NFS の UID/GID マッピングと ONTAP 側権限の具体的な対応は、実機で確認する必要がある [未測定]。
 
 ### 3.7 ECS のデーモン機構との関係 [文書]
 
@@ -122,7 +122,7 @@ ECS on EC2 のタスク定義は、`dockerVolumeConfiguration` の `driver` で*
 - Windows コンテナは `local` ドライバのみ対応。
 - ボリュームは Docker が管理し、コンテナインスタンスの `/var/lib/docker/volumes` にデータ用ディレクトリが作られる。
 
-### 4.3 2 つを組み合わせた場合の判定 [未確認]
+### 4.3 2 つを組み合わせた場合の判定 [未測定]
 
 4.1 と 4.2 を組み合わせると、次の経路が原理的に成立しうる。
 
@@ -132,21 +132,21 @@ ECS on EC2 のタスク定義は、`dockerVolumeConfiguration` の `driver` で*
 
 Trident の backend として FSx for ONTAP はサポート対象に挙がっている(出典: [Requirements の Supported backends](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html))。
 
-**ただし、この組み合わせを公式にサポート/テスト済みと明記した記載は、本調査時点(2026-09-22)で AWS / NetApp のどちらにも見つからなかった** [未確認]。確認した範囲: ECS のドキュメント(docker-volumes.html、specify-volume-config.html)、Trident の Docker デプロイ手順、Trident の要件ページ。したがって:
+**ただし、この組み合わせを公式にサポート/テスト済みと明記した記載は、本調査時点(2026-09-22)で AWS / NetApp のどちらにも見つからなかった** [未測定]。確認した範囲: ECS のドキュメント(docker-volumes.html、specify-volume-config.html)、Trident の Docker デプロイ手順、Trident の要件ページ。したがって:
 
 - 「2 つの文書化された機構(ECS のサードパーティボリュームドライバ、Trident for Docker)の組み合わせで成立しうる」までは言える。
 - 「ECS + Trident Docker プラグイン + FSx for ONTAP が動く」ことは**確認していない**。公式サポートの裏取りも無い。
 
-この区別を曖昧にすると誤った設計判断を招く。実機検証(5 章)で確認するまでは [未確認] のまま扱う。
+この区別を曖昧にすると誤った設計判断を招く。実機検証(5 章)で確認するまでは [未測定] のまま扱う。
 
-### 4.4 NFS ホストマウント方式との違い [文書 + 未確認]
+### 4.4 NFS ホストマウント方式との違い [文書 + 未測定]
 
 | 観点 | NFS ホストマウント(3 章) | Trident Docker プラグイン(4 章) |
 |---|---|---|
 | ボリュームの作成 | 事前に ONTAP 側でボリューム作成、ホストが手動マウント | Trident が要求時にプロビジョン(`docker volume create`) |
 | 制御面 | OS の mount / fstab | Trident(`docker volume` / 設定ファイル) |
 | 動的プロビジョニング | なし(静的) | あり(Trident が払い出す) |
-| 公式サポートの明記 | あり(AWS ECS ユーザーガイド)[文書] | 見つからず [未確認] |
+| 公式サポートの明記 | あり(AWS ECS ユーザーガイド)[文書] | 見つからず [未測定] |
 | ONTAP 機能(Snapshot/クローン) | ONTAP 側で別途運用 | Trident のドライバ機能として利用しうる(未確認) |
 
 動的プロビジョニングや ONTAP 機能連携が要らないなら、確立した NFS ホストマウント方式で足りる。Trident Docker プラグイン経路の利点(動的プロビジョン等)が要る場合に、次段階の実機検証で可否を確かめる。
@@ -165,18 +165,18 @@ Trident の backend として FSx for ONTAP はサポート対象に挙がって
    - `ontap-san`(iSCSI)使用時、ノードのマルチパス設定と EBS の競合(`multipath.conf` で EBS を blacklist する必要)を回避できるか。
    - タスク再起動・インスタンス入れ替え時のマウントの再現。
    - NFS ホストマウント方式(3 章)との運用差(動的プロビジョン、ONTAP 機能)。
-5. **記録**: できた/できなかった/条件付きで成立、を本文書の 4.3 に反映し、[未確認] を [実測] へ更新する。
+5. **記録**: できた/できなかった/条件付きで成立、を本文書の 4.3 に反映し、[未測定] を [実測] へ更新する。
 
 ---
 
-## 6. 未確認事項
+## 6. 未測定事項
 
 | # | 項目 | 調査 / 検証の状態(2026-09-22) |
 |---|---|---|
-| E1 | ECS + Trident Docker プラグイン + FSx for ONTAP の統合可否 | 原理的に成立しうる(4.3)。公式サポートの明記は見つからず。実機未検証 [未確認] |
-| E2 | マウント失敗時の ECS タスクの実挙動 | 未検証。運用設計側の課題 [未確認] |
-| E3 | NFS の UID/GID と ONTAP エクスポートポリシーの具体的対応 | 実機で確認要 [未確認] |
-| E4 | Trident Docker プラグインの `ontap-san` 使用時の EBS multipath 競合回避 | Kubernetes 経路では blacklist 必須と判明済み。Docker プラグイン経路での挙動は未検証 [未確認] |
+| E1 | ECS + Trident Docker プラグイン + FSx for ONTAP の統合可否 | 原理的に成立しうる(4.3)。公式サポートの明記は見つからず。実機未検証 [未測定] |
+| E2 | マウント失敗時の ECS タスクの実挙動 | 未検証。運用設計側の課題 [未測定] |
+| E3 | NFS の UID/GID と ONTAP エクスポートポリシーの具体的対応 | 実機で確認要 [未測定] |
+| E4 | Trident Docker プラグインの `ontap-san` 使用時の EBS multipath 競合回避 | Kubernetes 経路では blacklist 必須と判明済み。Docker プラグイン経路での挙動は未検証 [未測定] |
 
 ---
 

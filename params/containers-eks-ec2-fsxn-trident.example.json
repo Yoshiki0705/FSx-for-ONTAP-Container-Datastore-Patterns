@@ -1,9 +1,5 @@
 [
   {
-    "ParameterKey": "VpcId",
-    "ParameterValue": "vpc-0123456789abcdef0"
-  },
-  {
     "ParameterKey": "Subnet1Id",
     "ParameterValue": "subnet-0123456789abcdef0"
   },
@@ -17,7 +13,7 @@
   },
   {
     "ParameterKey": "KubernetesVersion",
-    "ParameterValue": "1.31"
+    "ParameterValue": "1.35"
   },
   {
     "ParameterKey": "NodeInstanceType",
@@ -26,6 +22,10 @@
   {
     "ParameterKey": "NodeDesiredSize",
     "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "PrepareNodesForIscsi",
+    "ParameterValue": "true"
   },
   {
     "ParameterKey": "FsxnSecurityGroupId",

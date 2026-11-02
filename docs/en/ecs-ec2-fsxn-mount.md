@@ -17,9 +17,9 @@ The established way to use FSx for ONTAP on ECS on EC2 is for the **EC2 containe
 |---|---|---|---|
 | Linux + NFS | Host mounts NFS → bind mount via `host.sourcePath` | Linux | [Documented] |
 | Windows + SMB | Host SMB global mapping → bind mount | Windows | [Documented] |
-| Via Trident (Docker plugin) | Trident as the host's Docker volume driver → referenced by the task definition `dockerVolumeConfiguration` | Linux | [Unverified] |
+| Via Trident (Docker plugin) | Trident as the host's Docker volume driver → referenced by the task definition `dockerVolumeConfiguration` | Linux | [Not measured] |
 
-**Correction about Trident**: earlier in this project it was stated that "Trident is Kubernetes-only and cannot be used on ECS." That was wrong. Trident is also offered as a Docker volume plugin and does not depend on Kubernetes (Section 3). Introducing it on ECS on EC2 is feasible in principle, but no statement that AWS or NetApp officially supports/tests the "ECS + Trident Docker plugin" combination was found as of this research (2026-09-22). It is therefore [Unverified], and hands-on verification is placed in the next stage (Section 5).
+**Correction about Trident**: earlier in this project it was stated that "Trident is Kubernetes-only and cannot be used on ECS." That was wrong. Trident is also offered as a Docker volume plugin and does not depend on Kubernetes (Section 3). Introducing it on ECS on EC2 is feasible in principle, but no statement that AWS or NetApp officially supports/tests the "ECS + Trident Docker plugin" combination was found as of this research (2026-09-22). It is therefore [Not measured], and hands-on verification is placed in the next stage (Section 5).
 
 ---
 
@@ -27,9 +27,9 @@ The established way to use FSx for ONTAP on ECS on EC2 is for the **EC2 containe
 
 | Tag | Meaning |
 |---|---|
-| **[Verified]** | Actually executed and confirmed in this repository |
-| **[Documented]** | Stated in AWS / NetApp official documentation. Source URL included. Does not imply hands-on confirmation |
-| **[Unverified]** | Not executed and not corroborated by public information. Investigation date and scope included |
+| **[Tested]** | Executed and confirmed on real infrastructure in this repository |
+| **[Documented]** | Stated in AWS / NetApp docs, not verified in a real environment. Source URL included |
+| **[Not measured]** | Not executed, or out of scope here. Investigation date and scope included |
 
 ---
 
@@ -67,16 +67,16 @@ sudo mount -t nfs -o nfsvers=4.1 svm-dns-name:/volume-junction-path /fsxontap
 - Allow NFS on port 2049 and SMB on port 445 from the ECS instances to the FSx for ONTAP security group.
 - Place FSx for ONTAP and the ECS instances in mutually reachable VPCs. Reachability to the SVM endpoint (DNS / IP) is a prerequisite.
 
-### 3.5 Mount lifecycle [Documented + Unverified]
+### 3.5 Mount lifecycle [Documented + Not measured]
 
 - The mount is a container instance action (user-data / `fstab`), not something the task creates.
-- **If a task starts before the mount, the bind-mount target is empty** [documented implication]. Treat the mount as a launch prerequisite. How to handle a task on mount failure (retry, health check) is an operational design concern, and the actual behavior is unverified [Unverified].
+- **If a task starts before the mount, the bind-mount target is empty** [documented implication]. Treat the mount as a launch prerequisite. How to handle a task on mount failure (retry, health check) is an operational design concern, and the actual behavior is unverified [Not measured].
 
-### 3.6 Authentication and permissions [Documented + Unverified]
+### 3.6 Authentication and permissions [Documented + Not measured]
 
 - Linux + NFS: because the host mounts over NFS, file access follows the host UID/GID and the ONTAP export policy. The task role (IAM) is not involved in the mount itself.
 - Windows + SMB: the SVM joins Active Directory and SMB authentication uses AD credentials. For AD-join prerequisites, see the [AD integration procedure](https://github.com/Yoshiki0705/VMware-Migration-EC2-ONTAP/blob/main/docs/en/ad-integration-for-migration.md) in the separate repository.
-- The concrete mapping of NFS UID/GID to ONTAP-side permissions needs hands-on confirmation [Unverified].
+- The concrete mapping of NFS UID/GID to ONTAP-side permissions needs hands-on confirmation [Not measured].
 
 ### 3.7 Relationship with the ECS daemon mechanisms [Documented]
 
@@ -122,7 +122,7 @@ An ECS on EC2 task definition can specify a **third-party Docker volume driver**
 - Windows containers support only the `local` driver.
 - The volume is managed by Docker, and a data directory is created in `/var/lib/docker/volumes` on the container instance.
 
-### 4.3 Assessment of combining the two [Unverified]
+### 4.3 Assessment of combining the two [Not measured]
 
 Combining 4.1 and 4.2, the following path is feasible in principle.
 
@@ -132,21 +132,21 @@ Combining 4.1 and 4.2, the following path is feasible in principle.
 
 FSx for ONTAP is listed as a supported Trident backend (source: [Requirements, Supported backends](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html)).
 
-**However, no statement that AWS or NetApp officially supports/tests this combination was found as of this research (2026-09-22)** [Unverified]. Scope searched: the ECS documentation (docker-volumes.html, specify-volume-config.html), the Trident Docker deploy procedure, and the Trident requirements page. Therefore:
+**However, no statement that AWS or NetApp officially supports/tests this combination was found as of this research (2026-09-22)** [Not measured]. Scope searched: the ECS documentation (docker-volumes.html, specify-volume-config.html), the Trident Docker deploy procedure, and the Trident requirements page. Therefore:
 
 - We can say up to "it is feasible by combining two documented mechanisms (ECS third-party volume driver, Trident for Docker)".
 - We have **not** confirmed that "ECS + Trident Docker plugin + FSx for ONTAP works". There is no corroboration of official support.
 
-Blurring this distinction invites wrong design decisions. Until hands-on verification (Section 5), treat it as [Unverified].
+Blurring this distinction invites wrong design decisions. Until hands-on verification (Section 5), treat it as [Not measured].
 
-### 4.4 Difference from the NFS host-mount method [Documented + Unverified]
+### 4.4 Difference from the NFS host-mount method [Documented + Not measured]
 
 | Aspect | NFS host mount (Section 3) | Trident Docker plugin (Section 4) |
 |---|---|---|
 | Volume creation | Create the volume on ONTAP in advance; the host mounts it manually | Trident provisions on demand (`docker volume create`) |
 | Control plane | OS mount / fstab | Trident (`docker volume` / config file) |
 | Dynamic provisioning | None (static) | Yes (Trident provisions) |
-| Official support stated | Yes (AWS ECS User Guide) [Documented] | Not found [Unverified] |
+| Official support stated | Yes (AWS ECS User Guide) [Documented] | Not found [Not measured] |
 | ONTAP features (snapshot/clone) | Operated separately on ONTAP | Potentially usable as Trident driver features (unverified) |
 
 If you do not need dynamic provisioning or ONTAP feature integration, the established NFS host-mount method suffices. If you need the Trident Docker plugin path's benefits (dynamic provisioning, etc.), confirm feasibility in the next-stage hands-on verification.
@@ -165,18 +165,18 @@ This session does not perform hands-on verification. Here is the design of the s
    - When using `ontap-san` (iSCSI), whether the node multipath configuration and EBS conflict (need to blacklist EBS in `multipath.conf`) can be avoided.
    - Mount reproduction on task restart and instance replacement.
    - The operational difference from the NFS host-mount method (Section 3) (dynamic provisioning, ONTAP features).
-5. **Record**: reflect worked / did not work / conditionally worked in Section 4.3 of this document, updating [Unverified] to [Verified].
+5. **Record**: reflect worked / did not work / conditionally worked in Section 4.3 of this document, updating [Not measured] to [Tested].
 
 ---
 
-## 6. Unverified Items
+## 6. Not measured items
 
 | # | Item | Research / verification state (2026-09-22) |
 |---|---|---|
-| E1 | Feasibility of ECS + Trident Docker plugin + FSx for ONTAP integration | Feasible in principle (4.3). No official support statement found. Not verified on hardware [Unverified] |
-| E2 | Actual ECS task behavior on mount failure | Not verified. An operational design concern [Unverified] |
-| E3 | Concrete mapping of NFS UID/GID to ONTAP export policy | To confirm on hardware [Unverified] |
-| E4 | EBS multipath conflict avoidance when using `ontap-san` with the Trident Docker plugin | Blacklisting is known to be required on the Kubernetes path. Behavior on the Docker plugin path is not verified [Unverified] |
+| E1 | Feasibility of ECS + Trident Docker plugin + FSx for ONTAP integration | Feasible in principle (4.3). No official support statement found. Not verified on hardware [Not measured] |
+| E2 | Actual ECS task behavior on mount failure | Not verified. An operational design concern [Not measured] |
+| E3 | Concrete mapping of NFS UID/GID to ONTAP export policy | To confirm on hardware [Not measured] |
+| E4 | EBS multipath conflict avoidance when using `ontap-san` with the Trident Docker plugin | Blacklisting is known to be required on the Kubernetes path. Behavior on the Docker plugin path is not verified [Not measured] |
 
 ---
 

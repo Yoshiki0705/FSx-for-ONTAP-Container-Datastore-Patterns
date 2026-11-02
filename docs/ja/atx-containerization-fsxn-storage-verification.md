@@ -2,8 +2,8 @@
 
 **目的**: AWS Transform でコンテナ化した後の実行環境(ECS on EC2 / EKS on EC2 / ECS on Fargate / EKS on Fargate)で、Amazon FSx for NetApp ONTAP をデータ領域として使う 4 構成の実現性を一次情報で確定し、実現するものは CloudFormation テンプレート化して静的検証まで行う。
 
-**最終更新**: 2026-09-22
-**ステータス**: 文献調査 + CloudFormation 作成 + 静的検証(cfn-lint)まで。実機デプロイは未実施(次段階)
+**最終更新**: 2026-10-29
+**ステータス**: 文献調査 + CloudFormation 作成 + 静的検証(cfn-lint)+ 構成 2 の実機デプロイ(小規模、4.3)。構成 1・3・4 の実機デプロイは未実施(次段階)
 
 関連: [コンテナ化(ECS/EKS)への派生と FSx for ONTAP の連携可否](atx-containerization-fsxn-derivation.md)。本メモはその調査を受けて「使えるなら、どう構成するか」を CloudFormation に落とす。
 
@@ -16,7 +16,7 @@
 | # | 実行環境 | FSx for ONTAP の到達形態 | アプリ改修 | CloudFormation | 区分 |
 |---|---|---|---|---|---|
 | 1 | ECS on EC2 | NFS を EC2 ホストにマウント → bind mount | 不要(ファイル I/O のまま) | [作成済み](../../templates/containers-ecs-ec2-fsxn-nfs.yaml) | [文書] |
-| 2 | EKS on EC2 | Trident CSI の PV(NFS `ontap-nas` / iSCSI `ontap-san`) | 不要(ファイル I/O のまま) | [作成済み](../../templates/containers-eks-ec2-fsxn-trident.yaml) | [文書] |
+| 2 | EKS on EC2 | Trident CSI の PV(NFS `ontap-nas` / iSCSI `ontap-san`) | 不要(ファイル I/O のまま) | [作成済み](../../templates/containers-eks-ec2-fsxn-trident.yaml) | [文書]・[実測](4.3) |
 | 3 | ECS on Fargate | S3 Access Points 経由の S3 オブジェクト API | 必要(S3 SDK へ) | [作成済み](../../templates/containers-ecs-fargate-fsxn-s3ap.yaml) | [文書] |
 | 4 | EKS on Fargate | S3 Access Points 経由の S3 オブジェクト API | 必要(S3 SDK へ) | [作成済み](../../templates/containers-eks-fargate-fsxn-s3ap.yaml) | [文書] |
 
@@ -28,11 +28,11 @@
 
 | タグ | 意味 |
 |---|---|
-| **[実測]** | 本リポジトリで実際に実行して確認済み |
-| **[文書]** | AWS / NetApp 公式ドキュメントの記載。出典 URL を併記。実機確認は意味しない |
-| **[未確認]** | 実行しておらず公開情報でも裏取りできていない。調査日と調査範囲を併記 |
+| **[実測]** | 本リポジトリで実機で実行して確認済み |
+| **[文書]** | AWS / NetApp のドキュメント上の記載、実機では未確認。出典 URL を併記 |
+| **[未測定]** | 実行していない、またはこの範囲では扱っていない。調査日と調査範囲を併記 |
 
-本メモの CloudFormation は静的検証(cfn-lint)まで [実測] で通しているが、**デプロイして動作することは検証していない** [未確認]。
+本メモの CloudFormation は静的検証(cfn-lint)まで [実測] で通している。デプロイして動作することは、構成 2 についてのみ小規模に確認した(4.3)。**構成 1・3・4 は、デプロイして動作することを検証していない** [未測定]。
 
 ---
 
@@ -63,11 +63,54 @@ Trident はコントローラ Pod と各ワーカーノードの node pod(Daemon
 
 ### 4.2 CloudFormation の設計と、CloudFormation で作れないもの
 
-- CloudFormation で作れるもの: EKS クラスタ、managed node group、Trident EKS アドオン(`AWS::EKS::Addon`)、IRSA 用 OIDC プロバイダ、ノードのセキュリティグループ。FSx for ONTAP の既存セキュリティグループへ NFS(2049)と iSCSI(3260)の ingress を追加する。
+- CloudFormation で作れるもの: EKS クラスタ、managed node group、Trident EKS アドオン(`AWS::EKS::Addon`)、IRSA 用 OIDC プロバイダ、`PrepareNodesForIscsi=true` のときの iSCSI 用ノード準備(launch template)。FSx for ONTAP の既存セキュリティグループへは、EKS クラスタのセキュリティグループを送信元として、管理(443)・NFS(2049)・iSCSI(3260)の ingress を追加する。管理対象ノードグループのノードに付くのはこのクラスタ SG で、`ResourcesVpcConfig` に渡した追加 SG はコントロールプレーンの ENI 用であり、ノードには付かない [実測: 2026-10-29、ap-northeast-1、2 ノード、1 回観測]。
 - CloudFormation で作れないもの: PV を生む Kubernetes オブジェクト(TridentBackendConfig / StorageClass / PersistentVolumeClaim)。これらはスタック完了後に kubectl / Helm で適用する。
 - Trident EKS アドオンの名称・バージョンは変わりうるため、デプロイ前に `aws eks describe-addon-versions --addon-name netapp_trident-operator` で確認する。
+- `KubernetesVersion` に既定値は無い。既定値は、標準サポートから延長サポートへ移ると、テンプレートを変えなくても古くなる(2026-10-29 時点の ap-northeast-1 では 1.31 が延長サポート [実測])。`aws eks describe-cluster-versions` で標準サポートの版を確認して指定する。
 
 **iSCSI 使用時の注意(対称に記載)**: `ontap-san`(ブロック)を Amazon EBS CSI ドライバと併用する場合、ノードのマルチパス設定が EBS を掴まないよう `multipath.conf` で EBS デバイスを blacklist する必要がある(出典: 上記 EKS ユーザーガイドおよび Trident ドキュメント両方に記載)。
+
+Amazon Linux 2023 の EKS AMI には iSCSI ツール(`iscsi-initiator-utils`、`device-mapper-multipath`、`lsscsi`)が入っていない(`nfs-utils` は入っている) [実測: 2026-10-29、ap-northeast-1、2 ノード、1 回観測]。テンプレートは launch template の user data で導入し、`multipath.conf` を書く。同じコマンドを SSM Run Command で実行すると SAN の PV が動作した [実測]。変更後のテンプレートをデプロイすると、user data がノードの初回起動で動き、パッケージの導入、`iscsid` と `multipathd` の起動、`multipath.conf` の内容が期待どおりになり、Trident の node pod は再起動なしに両ノードで iSCSI を検出した [実測: 2026-10-29、ap-northeast-1、2 ノード、1 回観測]。同じ日の別のデプロイでも手作業なしに同じ状態になり、SAN と NAS の PV でデータが残ることを確認した(4.3)。ただし `iscsid` の起動と kubelet の起動は同じ秒で、順序が保証される根拠は得ていない。node pod がツールの導入より先に起動した場合は、`trident-node-linux` の DaemonSet を再起動する。
+
+### 4.3 構成 2 の実機確認結果
+
+**範囲**: 2026-10-29 に 2 回、ap-northeast-1、既存の Single-AZ の FSx for ONTAP、各項目 1 回の観測。1 回目は 4.2 の launch template を加える前のリビジョン、2 回目は加えた後のリビジョンで行った。小規模の確認であり、連続運用、性能、Multi-AZ のフェイルオーバー、複数 Pod が同じファイルへ同時に書くときの整合は含まない。
+
+| 項目 | 内容 |
+|---|---|
+| Kubernetes | v1.35(標準サポートの版) |
+| ノード | m5.large × 2(別 AZ)、Amazon Linux 2023 |
+| Trident アドオン | `netapp_trident-operator` v26.6.2-eksbuild.1(既定) |
+| ONTAP | NetApp Release 9.18.1P6(2 回目で取得。1 回目は取得していない) |
+| SVM | 検証用に作った専用 SVM。専用の `vsadmin` を設定 |
+| バックエンドの認証 | Kubernetes Secret。Secrets Manager 参照(`awsarn`)は IRSA の追加設定が要るため試していない |
+| StorageClass と PVC | `ontap-san` と `ontap-nas`、reclaim policy は `Delete`、1 GiB の PVC を各 1 本 |
+
+| 系統 | 確認内容 | 結果 [実測] |
+|---|---|---|
+| iSCSI / RWO | PVC の払い出し | 約 10 秒で `Bound`(`ReadWriteOnce`) |
+| iSCSI / RWO | マーカーの書き込み後、Pod の再起動後(同一ノード)、現ノードを cordon して Pod を削除した後(別ノード、別 AZ) | マーカーが 3 回とも一致。旧 Pod の削除が終わってから新 Pod が起動した。両ノードで同じ multipath デバイス(ext4)をマウント |
+| NFS / RWX | PVC の払い出し | 約 10 秒で `Bound`(`ReadWriteMany`) |
+| NFS / RWX | 別ノードの Pod A が書いた内容を Pod B が読む | 一致(NFS v4.2) |
+| NFS / RWX | Deployment を再起動し、Pod がすべて新しくなった後 | 一致。再起動後の追記も別の Pod から読めた |
+
+**観測の範囲**: 上の表の結果は 2 回とも同じだった。1 回目はノード準備を SSM Run Command で手作業で適用した。2 回目は手作業を挟まず、Trident の node Pod は再起動 0 回で、両ノードが iSCSI を使える状態(`tridentctl get node` で clean)になった。
+
+| 系統 | 確認内容(2 回目) | 結果 [実測] |
+|---|---|---|
+| 既存ボリュームの取り込み | FSx の API で作ったボリュームに、PVC を使わない Pod がファイルを書く。アノテーション `trident.netapp.io/importOriginalName` と `trident.netapp.io/importBackendUUID` を付けた PVC で取り込む | 約 10 秒で `Bound`。取り込み前に書いたファイルを、取り込み後の Pod から読めた。ONTAP 上のボリューム名は `trident_pvc_…` に変わり、UUID とジャンクションパスは変わらなかった |
+| 取り込みと reclaim policy | reclaim policy `Retain` の StorageClass で取り込み、PVC と PV オブジェクトを削除する | ONTAP 上のボリュームは残った。ただし Trident はボリュームの記録を持ち続け、TridentBackendConfig の削除は `Backend is in a deleting state` のまま進まなかった。`tridentctl delete volume <PV 名>` で記録を消すと削除が終わった |
+| 資格情報の誤り | 誤ったパスワードの Secret を参照する TridentBackendConfig を作る | `Failed`、`401 (Unauthorized): incorrect or missing credentials`。PVC は `Pending` のままで、イベントは `no available backends for storage class` |
+| 管理 LIF に到達できない | 使われていない IP を管理 LIF に指定する | `Failed`、`connect: no route to host`。PVC は `Pending` で同じイベント |
+| 動いているバックエンドの Secret を書き換える | 正しいパスワードを誤った値に変える | バックエンドは再読み込みされるまで `Success` のままで、元の資格情報で動いた。再読み込み(TridentBackendConfig の spec の変更)で `Failed` になった。既存の Pod の読み書きは最後まで止まらず、止まったのは新しい PVC の払い出しだけだった |
+
+**SVM ユーザーのロック**: 上の 2 つの失敗の試験のあと、正しいパスワードに戻しても認証が `401`(ONTAP のエラーコード 6691623)を返した。ONTAP 上で `vsadmin` がロックされていた。同じ `vsadmin` を使う SAN 側のバックエンドも `Failed` になった。ロックは自動では解けず、ファイルシステム管理者(`fsxadmin`)でロックを解除すると、両方のバックエンドが `Success` に戻り、待っていた PVC も `Bound` になった。誤ったパスワードでの認証が、資格情報の誤りの試験と再読み込みで繰り返されたためとみられる。ロックの閾値とロックされた時刻は読み取っていない。失敗の形を確かめるときは、別の SVM ユーザーを使うか、ほかの確認の後に行う。
+
+**撤去の観測**: reclaim policy が `Delete` のとき、PVC を削除すると LUN とボリュームが ONTAP から消えた(ONTAP REST API で確認)。SAN の PVC を削除して 10 秒後の時点では SAN 用のボリュームがまだ残っており、削除は非同期である。このファイルシステムのバックアップ数は撤去の前後で変わらず、最終バックアップは作られなかった。ただしこのファイルシステムは自動バックアップの保持日数を返さなかったので、自動バックアップが有効な環境では未確認である。
+
+**確認用 Deployment の注意**: Pod を別ノードに置く必須の分散指定と、ローリング更新の既定(`maxSurge` 25%)を組み合わせると、ノード数と Pod 数が同じとき、追加の Pod を置く場所がなく更新が止まった。`maxSurge: 0`、`maxUnavailable: 1` にして解消した。
+
+FSx の API と ONTAP のボリューム一覧の差は 7.1 に記す。2 回目では、作成から約 55 分たった SVM の削除の時点で Trident のボリュームは FSx の API に出ておらず、SVM の削除は 1 回目の要求で受け付けられた。出現と消失の時刻は 2 回目では測っていない。
 
 ---
 
@@ -120,15 +163,15 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 
 `make cfn-lint`(cfn-lint、`templates/*.yaml`)が exit 0 で通ることを確認した。4 テンプレートと既存 2 テンプレートを含む。各テンプレートに対応する `params/*.example.json` をダミー値で用意し、キーがテンプレートのパラメータと一致することを確認した(構成 1 の新規ネットワーク用 CIDR パラメータは既定値を持ち、既存参照時は省略されるため未記載)。
 
-**この検証が言っていない範囲**: デプロイして動作することは検証していない。特に以下は実機検証(次段階)で確認する。
+**この検証が言っていない範囲**: 構成 2 以外は、デプロイして動作することを検証していない。構成 2 の結果は 4.3 にある。以下は実機検証で確認する項目で、V1 と V2 は構成 2 の分を確認済みである。
 
 | # | 項目 | 調査 / 検証の状態(2026-09-22) |
 |---|---|---|
-| V1 | 4 構成のデプロイとデータ疎通 | 未実施。cfn-lint のみ [実測] |
-| V2 | Trident EKS アドオンの現行名・バージョン | describe-addon-versions で要確認 [未確認] |
-| V3 | EKS Pod Identity の Fargate 対応可否 | 本メモは IRSA を採用。Pod Identity の Fargate 対応は未確認 [未確認] |
-| V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | 実機で権限設計を確認する必要あり [未確認] |
-| V5 | S3 Access Point 経由の実効スループット | 文書は「ファイルシステムのプロビジョンドスループット依存」と記載。実測は未実施 [未確認] |
+| V1 | 4 構成のデプロイとデータ疎通 | 構成 2 は 2026-10-29 に確認(4.3)[実測]。構成 1・3・4 は未実施で、cfn-lint のみ [実測] |
+| V2 | Trident EKS アドオンの現行名・バージョン | 2026-10-29 の ap-northeast-1 で `netapp_trident-operator` が存在し、既定は v26.6.2-eksbuild.1、対応する Kubernetes は 1.36 まで [実測]。名称と版は変わりうるため、デプロイ前に再確認する |
+| V3 | EKS Pod Identity の Fargate 対応可否 | 本メモは IRSA を採用。Pod Identity の Fargate 対応は未確認 [未測定] |
+| V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | 実機で権限設計を確認する必要あり [未測定] |
+| V5 | S3 Access Point 経由の実効スループット | 文書は「ファイルシステムのプロビジョンドスループット依存」と記載。実測は未実施 [未測定] |
 
 ### 7.1 デプロイ準備(実機検証の前段)
 
@@ -145,7 +188,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 
 | 準備 | 対応する未検証項目 | 確認手段 |
 |---|---|---|
-| Trident EKS アドオンの現行名・バージョン | V2 | `aws eks describe-addon-versions --addon-name netapp_trident-operator`。ドキュメントは Trident 25.10 系が最新で、本メモの 25.02 参照から進んでいる [文書] |
+| Trident EKS アドオンの現行名・バージョン | V2 | `aws eks describe-addon-versions --addon-name netapp_trident-operator`。2026-10-29 の ap-northeast-1 では v26.6.2-eksbuild.1 が既定で、本メモの 25.02 参照から進んでいる [実測] |
 | S3 Access Point の二層認可(IAM + ファイルシステムレベルの UNIX / Windows ユーザー) | V4 | アクセスポイントに紐づく UNIX ユーザーと ONTAP 側のファイル権限の対応を実機で設計する [文書] |
 | 対象リージョンでの提供 | V1 全般 | 第 2 世代 FSx for ONTAP は 2026-04 に 4 リージョン + GovCloud へ拡大。S3 Access Points は東京(ap-northeast-1)対応 [文書]。使うリージョンでの提供を確認する |
 | IRSA の trust condition(EKS Fargate) | V3 | `sub` / `aud` はクラスタ作成後に手動で trust policy へ追加(5.2)。共用アカウントで未設定のまま放置しない |
@@ -157,8 +200,11 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 - マウントはインスタンスの起動時処理で、タスクが作るものではない。マウント前にタスクが起動すると bind mount 先が空になる(3.2 に既述)。マウントを起動の前提条件として扱う。
 - `ontap-san`(iSCSI)を Amazon EBS CSI ドライバと併用する場合、`multipath.conf` で EBS デバイスを blacklist しないとノードのマルチパスが EBS を掴む(4.2 に既述)。
 - Trident の StorageClass / PVC / TridentBackendConfig は CloudFormation では作れない。スタック完了後に kubectl / Helm で適用する(4.2 に既述)。
+- FSx の API は、Trident が ONTAP 側で作るボリュームを遅れて反映する。撤去後の残存確認を FSx の API だけで行うと、作成の直後は「無い」、削除の直後は「残っている」と読み違える。確認は ONTAP REST API(管理 LIF へ VPC 内から到達する)で行う。作成の 23 秒後と 11 分後の確認では FSx の API に出ず、26 分後の確認では出ていた。ONTAP で削除してから 41 分後の確認でもまだ残り、44 分後に消えた [実測: 2026-10-29、ap-northeast-1、1 回観測]。FSx の API 上に非ルートのボリュームが見えている間は、SVM の削除が `BadRequest` で拒否された。
 
 **後始末(検証環境こそ確実に消す)**: 課金が続く主なリソースは FSx for ONTAP ファイルシステム(SSD 容量 + プロビジョンドスループットの時間課金)、EKS クラスタ、EC2 ノード / コンテナインスタンス、NAT / VPC エンドポイント。検証後にスタックを削除し、テンプレート外で先に作った FSx for ONTAP も忘れずに削除する。削除できない検証リソースは長期の請求になり、同居する他のリソースの操作も妨げる。
+
+**Trident を使った場合の撤去順序**: スタックより先に、アプリの Deployment、PVC(SAN と NAS を別々に)、StorageClass、TridentBackendConfig の順で削除する。reclaim policy `Retain` の PV があるときは、PV オブジェクトを消しても Trident の記録が残るため、`tridentctl delete volume` で消してから TridentBackendConfig を削除する(4.3)。そのうえで、LUN とボリュームが ONTAP から消えたことを ONTAP REST API で確認する。その後にスタックを削除する。検証用に専用の SVM を作った場合は、FSx の API 上に非ルートのボリュームが見えなくなってから SVM を削除する。
 
 ---
 
