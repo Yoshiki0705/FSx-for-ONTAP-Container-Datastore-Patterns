@@ -10,7 +10,8 @@ gitignored.
 
 [docs/agent/README.md](docs/agent/README.md) indexes the project conventions,
 the output standards (naming, vendor neutrality, public-output safety, JA/EN
-parity), and the quality gates.
+parity), the quality gates, and the decision-log / auditor / variance discipline
+for multi-step tasks.
 
 ## Hub
 
