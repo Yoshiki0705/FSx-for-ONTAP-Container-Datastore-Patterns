@@ -12,6 +12,10 @@
     "ParameterValue": "subnet-0123456789abcdef0"
   },
   {
+    "ParameterKey": "CreateS3GatewayEndpoint",
+    "ParameterValue": "true"
+  },
+  {
     "ParameterKey": "RouteTableId",
     "ParameterValue": "rtb-0123456789abcdef0"
   },

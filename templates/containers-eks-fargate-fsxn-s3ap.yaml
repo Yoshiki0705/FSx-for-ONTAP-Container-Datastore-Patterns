@@ -37,6 +37,7 @@ Metadata:
           - VpcId
           - Subnet1Id
           - Subnet2Id
+          - CreateS3GatewayEndpoint
           - RouteTableId
       - Label:
           default: EKS cluster and Fargate profile
@@ -64,10 +65,24 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Private subnet 2 (different AZ)
 
+  CreateS3GatewayEndpoint:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: >
+      true = create an S3 Gateway VPC endpoint on RouteTableId. false = reuse an
+      S3 Gateway endpoint that already covers the pod subnets' route table. A
+      route table can hold only one endpoint route to the same service, so
+      creating a second one on a route table that is already covered fails.
+      Check with aws ec2 describe-vpc-endpoints before choosing.
+
   RouteTableId:
     Type: String
-    Description: Route table ID for the pod subnets (S3 Gateway endpoint route)
-    AllowedPattern: '^rtb-[0-9a-f]{8}([0-9a-f]{9})?$'
+    Default: ''
+    Description: >
+      Route table ID for the pod subnets. Required when CreateS3GatewayEndpoint
+      is true (S3 Gateway endpoint route). Ignored when false.
+    AllowedPattern: '^(rtb-[0-9a-f]{8}([0-9a-f]{9})?)?$'
 
   ClusterName:
     Type: String
@@ -107,13 +122,31 @@ Parameters:
     Default: 'ec2-user'
     Description: >
       UNIX user name used to authorize file access made through the access point.
+      The user must be resolvable by the SVM (for example a local user created on
+      the SVM); otherwise the access point is not created, or becomes
+      MISCONFIGURED. root resolves by default but authorizes every file, so use a
+      dedicated user. The identity cannot be changed after the access point is
+      created.
     AllowedPattern: '^[^\r\n]{1,256}$'
+
+Rules:
+  RouteTableRequiredForEndpoint:
+    RuleCondition: !Equals [!Ref CreateS3GatewayEndpoint, 'true']
+    Assertions:
+      - Assert: !Not [!Equals [!Ref RouteTableId, '']]
+        AssertDescription: RouteTableId is required when CreateS3GatewayEndpoint is true
+
+Conditions:
+  CreateEndpoint: !Equals [!Ref CreateS3GatewayEndpoint, 'true']
 
 Resources:
 
   # ---------- S3 Gateway VPC endpoint ----------
+  # Skipped (CreateS3GatewayEndpoint=false) when the VPC already has an S3
+  # Gateway endpoint covering the pod subnets' route table.
   S3GatewayEndpoint:
     Type: AWS::EC2::VPCEndpoint
+    Condition: CreateEndpoint
     Properties:
       VpcId: !Ref VpcId
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
@@ -209,30 +242,80 @@ Resources:
         - Key: Project
           Value: aws-container-datastore-patterns
 
+  # ---------- CoreDNS on Fargate ----------
+  # A cluster with only a Fargate profile has no EC2 node for CoreDNS, which
+  # EKS schedules onto EC2 by default, so Pods could not resolve any name (the S3
+  # SDK needs DNS). Two pieces, as documented for Fargate-only clusters:
+  #   1. a Fargate profile that matches the CoreDNS Deployment
+  #      (kube-system, label k8s-app=kube-dns);
+  #   2. the coredns add-on with computeType=Fargate (a key of the add-on's
+  #      configuration schema), which removes the EC2-only scheduling constraint
+  #      so no manual `kubectl rollout restart` is needed.
+  # DependsOn serialises the second profile after the first: EKS handles one
+  # Fargate profile at a time per cluster.
+  CoreDnsFargateProfile:
+    Type: AWS::EKS::FargateProfile
+    DependsOn: FargateProfile
+    Properties:
+      ClusterName: !Ref EksCluster
+      FargateProfileName: coredns
+      PodExecutionRoleArn: !GetAtt FargatePodExecutionRole.Arn
+      Subnets:
+        - !Ref Subnet1Id
+        - !Ref Subnet2Id
+      Selectors:
+        - Namespace: kube-system
+          Labels:
+            - Key: k8s-app
+              Value: kube-dns
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
+  CoreDnsAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: CoreDnsFargateProfile
+    Properties:
+      ClusterName: !Ref EksCluster
+      AddonName: coredns
+      ConfigurationValues: '{"computeType":"Fargate"}'
+      ResolveConflicts: OVERWRITE
+      Tags:
+        - Key: Project
+          Value: aws-container-datastore-patterns
+
   # ---------- IRSA role: scoped to the access point ----------
-  # Trust policy binds the role to the cluster OIDC provider and a specific
-  # namespace:serviceaccount. The service account must be annotated with this
-  # role ARN after the stack completes.
-  # The IRSA trust condition keys are "<oidc-issuer-host>:sub" and ":aud". The
-  # issuer host is only known after the cluster exists, and CloudFormation cannot
-  # build a Condition *key* from an intrinsic function (a map key must be a
-  # literal). So this template grants the Federated principal without the sub/aud
-  # scoping, and the scoping is added after deploy. Do NOT leave it unscoped in a
-  # shared account: after the stack completes, update this role's trust policy to
-  # add, under StringEquals:
-  #   "<issuer-host>:aud": "sts.amazonaws.com"
-  #   "<issuer-host>:sub": "system:serviceaccount:<namespace>:<serviceaccount>"
-  # where <issuer-host> is the ClusterOidcIssuer output with "https://" removed.
+  # Trust policy binds the role to the cluster OIDC provider and one
+  # namespace:serviceaccount, at creation time. The condition keys are
+  # "<oidc-issuer-host>:aud" and ":sub"; CloudFormation cannot put an intrinsic
+  # function in a map key, but it can in a JSON string, so the policy is a JSON
+  # document inside Fn::Sub and the issuer host (the issuer URL without
+  # "https://") is passed in through the Sub variable map. After the stack
+  # completes, annotate the service account with this role's ARN.
+  # EKS Pod Identity is not an alternative here: it does not support Fargate Pods.
   IrsaRole:
     Type: AWS::IAM::Role
     Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Federated: !Ref OidcProvider
-            Action: sts:AssumeRoleWithWebIdentity
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${OidcProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${OidcIssuerHost}:aud": "sts.amazonaws.com",
+                    "${OidcIssuerHost}:sub": "system:serviceaccount:${ServiceAccountNamespace}:${ServiceAccountName}"
+                  }
+                }
+              }
+            ]
+          }
+        - OidcProviderArn: !Ref OidcProvider
+          OidcIssuerHost: !Select [1, !Split ['//', !GetAtt EksCluster.OpenIdConnectIssuerUrl]]
       Policies:
         - PolicyName: fsxn-s3-access-point
           PolicyDocument:
@@ -295,6 +378,16 @@ Outputs:
   AccessPointArn:
     Description: FSx for ONTAP S3 access point ARN
     Value: !GetAtt FsxnS3AccessPoint.S3AccessPoint.ResourceARN
+
+  AccessPointAlias:
+    Description: >
+      FSx for ONTAP S3 access point alias. Usable wherever an S3 bucket name is
+      accepted, for example aws s3api list-objects-v2 --bucket <alias>.
+    Value: !GetAtt FsxnS3AccessPoint.S3AccessPoint.Alias
+
+  ClusterOidcIssuer:
+    Description: Cluster OIDC issuer URL (the IRSA trust is already scoped to it)
+    Value: !GetAtt EksCluster.OpenIdConnectIssuerUrl
 
   ServiceAccountHint:
     Description: Service account that must carry the IRSA annotation

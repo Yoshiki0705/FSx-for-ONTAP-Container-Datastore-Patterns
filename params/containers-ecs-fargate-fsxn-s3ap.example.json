@@ -12,6 +12,10 @@
     "ParameterValue": "subnet-0123456789abcdef0"
   },
   {
+    "ParameterKey": "CreateS3GatewayEndpoint",
+    "ParameterValue": "true"
+  },
+  {
     "ParameterKey": "RouteTableId",
     "ParameterValue": "rtb-0123456789abcdef0"
   },
@@ -26,5 +30,9 @@
   {
     "ParameterKey": "ContainerImage",
     "ParameterValue": "111122223333.dkr.ecr.ap-northeast-1.amazonaws.com/awstransform-app:latest"
+  },
+  {
+    "ParameterKey": "ContainerCommand",
+    "ParameterValue": ""
   }
 ]

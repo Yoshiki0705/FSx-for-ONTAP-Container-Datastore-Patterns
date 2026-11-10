@@ -36,6 +36,7 @@ Metadata:
           - VpcId
           - Subnet1Id
           - Subnet2Id
+          - CreateS3GatewayEndpoint
           - RouteTableId
       - Label:
           default: FSx for ONTAP (existing, referenced)
@@ -46,6 +47,7 @@ Metadata:
           default: Container
         Parameters:
           - ContainerImage
+          - ContainerCommand
 
 Parameters:
   VpcId:
@@ -60,12 +62,25 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Private subnet 2 (different AZ)
 
+  CreateS3GatewayEndpoint:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: >
+      true = create an S3 Gateway VPC endpoint on RouteTableId. false = reuse an
+      S3 Gateway endpoint that already covers the task subnets' route table. A
+      route table can hold only one endpoint route to the same service, so
+      creating a second one on a route table that is already covered fails.
+      Check with aws ec2 describe-vpc-endpoints before choosing.
+
   RouteTableId:
     Type: String
+    Default: ''
     Description: >
-      Route table ID associated with the task subnets. The S3 Gateway endpoint
-      adds its prefix-list route here so in-VPC S3 traffic stays private.
-    AllowedPattern: '^rtb-[0-9a-f]{8}([0-9a-f]{9})?$'
+      Route table ID associated with the task subnets. Required when
+      CreateS3GatewayEndpoint is true (the endpoint adds its prefix-list route
+      here so in-VPC S3 traffic stays private). Ignored when false.
+    AllowedPattern: '^(rtb-[0-9a-f]{8}([0-9a-f]{9})?)?$'
 
   FsxnVolumeId:
     Type: String
@@ -78,7 +93,11 @@ Parameters:
     Description: >
       UNIX user name used to authorize file access made through the access point.
       All object requests map to this file system user, whose ONTAP permissions
-      then decide whether the underlying file operation is allowed.
+      then decide whether the underlying file operation is allowed. The user must
+      be resolvable by the SVM (for example a local user created on the SVM);
+      otherwise the access point is not created, or becomes MISCONFIGURED. root
+      resolves by default but authorizes every file, so use a dedicated user.
+      The identity cannot be changed after the access point is created.
     AllowedPattern: '^[^\r\n]{1,256}$'
 
   ContainerImage:
@@ -88,12 +107,35 @@ Parameters:
       Placeholder image. Replace with the S3-SDK application image AWS Transform
       containerization published to Amazon ECR.
 
+  ContainerCommand:
+    Type: String
+    Default: 'sleep infinity'
+    Description: >
+      Space-separated command for the container. The default keeps the placeholder
+      image running: without it the amazonlinux image exits at once, the service
+      never reaches a steady state, and stack creation waits on the service. Set
+      to an empty string to use your own image's CMD / ENTRYPOINT.
+
+Rules:
+  RouteTableRequiredForEndpoint:
+    RuleCondition: !Equals [!Ref CreateS3GatewayEndpoint, 'true']
+    Assertions:
+      - Assert: !Not [!Equals [!Ref RouteTableId, '']]
+        AssertDescription: RouteTableId is required when CreateS3GatewayEndpoint is true
+
+Conditions:
+  CreateEndpoint: !Equals [!Ref CreateS3GatewayEndpoint, 'true']
+  HasContainerCommand: !Not [!Equals [!Ref ContainerCommand, '']]
+
 Resources:
 
   # ---------- S3 Gateway VPC endpoint (free; in-VPC S3 traffic) ----------
   # Populates aws:SourceVpc so a VPC-origin access point accepts the request.
+  # Skipped (CreateS3GatewayEndpoint=false) when the VPC already has an S3
+  # Gateway endpoint covering the task subnets' route table.
   S3GatewayEndpoint:
     Type: AWS::EC2::VPCEndpoint
+    Condition: CreateEndpoint
     Properties:
       VpcId: !Ref VpcId
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
@@ -222,6 +264,7 @@ Resources:
         - Name: app
           Image: !Ref ContainerImage
           Essential: true
+          Command: !If [HasContainerCommand, !Split [' ', !Ref ContainerCommand], !Ref 'AWS::NoValue']
           Environment:
             - Name: FSXN_ACCESS_POINT_ARN
               Value: !GetAtt FsxnS3AccessPoint.S3AccessPoint.ResourceARN
@@ -262,6 +305,13 @@ Outputs:
     Description: FSx for ONTAP S3 access point ARN used by the task
     Value: !GetAtt FsxnS3AccessPoint.S3AccessPoint.ResourceARN
 
+  AccessPointAlias:
+    Description: >
+      FSx for ONTAP S3 access point alias. Usable wherever an S3 bucket name is
+      accepted, for example aws s3api list-objects-v2 --bucket <alias>.
+    Value: !GetAtt FsxnS3AccessPoint.S3AccessPoint.Alias
+
   S3GatewayEndpointId:
-    Description: S3 Gateway VPC endpoint ID
+    Condition: CreateEndpoint
+    Description: S3 Gateway VPC endpoint ID (only when CreateS3GatewayEndpoint is true)
     Value: !Ref S3GatewayEndpoint
