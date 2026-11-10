@@ -119,14 +119,16 @@ Parameters:
 
   FileSystemUnixUser:
     Type: String
-    Default: 'ec2-user'
     Description: >
       UNIX user name used to authorize file access made through the access point.
-      The user must be resolvable by the SVM (for example a local user created on
-      the SVM); otherwise the access point is not created, or becomes
-      MISCONFIGURED. root resolves by default but authorizes every file, so use a
-      dedicated user. The identity cannot be changed after the access point is
-      created.
+      Required; there is no default. All object requests map to this file system
+      user, whose ONTAP permissions decide whether the underlying file operation
+      is allowed. The user must be resolvable by the SVM (for example a local
+      user created on the SVM). An unresolvable name makes the access point go
+      to FAILED shortly after the create call returns success (observed with
+      ec2-user on a new SVM). root resolves by default but authorizes every
+      file, so it is a measurement condition, not a recommended setup. The
+      identity cannot be changed after the access point is created.
     AllowedPattern: '^[^\r\n]{1,256}$'
 
 Rules:
@@ -362,7 +364,12 @@ Resources:
                 - s3:GetObject
                 - s3:PutObject
                 - s3:ListBucket
-              Resource: '*'
+              # The access point policy rejects Resource '*'; it must name this
+              # access point. Built from the literal name, not GetAtt, so the
+              # policy does not depend on the access point it belongs to.
+              Resource:
+                - !Sub 'arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/fsxn-eks-fargate-ap'
+                - !Sub 'arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/fsxn-eks-fargate-ap/object/*'
 
 Outputs:
   ClusterName:

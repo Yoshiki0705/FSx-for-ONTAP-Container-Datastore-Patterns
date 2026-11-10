@@ -17,8 +17,8 @@
 |---|---|---|---|---|---|
 | 1 | ECS on EC2 | NFS を EC2 ホストにマウント → bind mount | 不要(ファイル I/O のまま) | [作成済み](../../templates/containers-ecs-ec2-fsxn-nfs.yaml) | [文書]・[実測](3.3) |
 | 2 | EKS on EC2 | Trident CSI の PV(NFS `ontap-nas` / iSCSI `ontap-san`) | 不要(ファイル I/O のまま) | [作成済み](../../templates/containers-eks-ec2-fsxn-trident.yaml) | [文書]・[実測](4.3) |
-| 3 | ECS on Fargate | S3 Access Points 経由の S3 オブジェクト API | 必要(S3 SDK へ) | [作成済み](../../templates/containers-ecs-fargate-fsxn-s3ap.yaml) | [文書] |
-| 4 | EKS on Fargate | S3 Access Points 経由の S3 オブジェクト API | 必要(S3 SDK へ) | [作成済み](../../templates/containers-eks-fargate-fsxn-s3ap.yaml) | [文書] |
+| 3 | ECS on Fargate | S3 Access Points 経由の S3 オブジェクト API | 必要(S3 SDK へ) | [作成済み](../../templates/containers-ecs-fargate-fsxn-s3ap.yaml) | [文書]・[実測](5.4) |
+| 4 | EKS on Fargate | S3 Access Points 経由の S3 オブジェクト API | 必要(S3 SDK へ) | [作成済み](../../templates/containers-eks-fargate-fsxn-s3ap.yaml) | [文書]・[実測](5.4) |
 
 **要点**: Fargate はボリュームマウントで FSx for ONTAP を使えないが、S3 Access Points 経由の**オブジェクトアクセス**なら使える。ファイル I/O をそのまま維持したいなら EC2 系(1・2)、サーバーレス運用を取るなら Fargate 系(3・4)でアプリを S3 SDK に寄せる、というトレードオフになる。
 
@@ -32,7 +32,7 @@
 | **[文書]** | AWS / NetApp のドキュメント上の記載、実機では未確認。出典 URL を併記 |
 | **[未測定]** | 実行していない、またはこの範囲では扱っていない。調査日と調査範囲を併記 |
 
-本メモの CloudFormation は静的検証(cfn-lint)まで [実測] で通している。デプロイして動作することは、構成 1(3.3)と構成 2(4.3)について小規模に確認した。**構成 3・4 は、デプロイして動作することを検証していない** [未測定]。
+本メモの CloudFormation は静的検証(cfn-lint)まで [実測] で通している。デプロイして動作することは、構成 1(3.3)、構成 2(4.3)、構成 3・4(5.4)について小規模に確認した。
 
 ---
 
@@ -144,14 +144,16 @@ FSx for ONTAP の S3 Access Points は、ボリュームのデータを S3 オ�
 
 - FSx for ONTAP の S3 Access Point は CloudFormation リソース `AWS::FSx::S3AccessPointAttachment` で作成できる(CLI 専用ではない)。ネットワーク origin を VPC にし、ファイルアクセスを認可する UNIX ユーザーを指定する。
 - in-VPC からの S3 トラフィックは無料の S3 Gateway VPC エンドポイントを通す。これが `aws:SourceVpc` を付与し、VPC origin のアクセスポイントが要求を受け入れる。
-- VPC に S3 Gateway エンドポイントが既にあり、タスク / Pod のサブネットのルートテーブルを覆っている場合は、`CreateS3GatewayEndpoint=false` で再利用する。同一サービスへのエンドポイントルートは 1 つのルートテーブルに 1 つしか持てないため、重ねて作ると失敗する [文書]([Gateway endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/vpce-gateway.html))。作成が実際に失敗することは確認していない [未測定]。
-- 構成 4 は、Fargate のみのクラスタで CoreDNS が動くように、`kube-system` + `k8s-app=kube-dns` に一致する Fargate profile と、`computeType=Fargate` の coredns add-on を作る。CoreDNS は既定で EC2 前提のため、これが無いと Pod は名前解決できず、S3 SDK が動かない [文書]([Get started with AWS Fargate](https://docs.aws.amazon.com/eks/latest/userguide/fargate-getting-started.html))。`computeType` は coredns add-on の設定項目として実在する [実測: 2026-11-10、`describe-addon-configuration`]。デプロイして動くことは未確認 [未測定]。<!-- spoke-checked: computetype --> <!-- spoke-checked: pods -->
-- `FileSystemIdentity`(UNIX ユーザー)は、SVM が名前解決できるユーザーでなければならない。Hub の実測は、SVM のローカル(`files`)に作ったユーザーで Access Point が AVAILABLE になり読み書きできたこと、非 root の `nobody` を固定すると root 所有・755 のボリュームで書き込みが拒否されたことを記録している [文書]([Hub: Access Point の認可の層(日本語)](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/security-governance/notes/access-point-authorization-layers.md)、実測日 2026-08-17 / 18)。テンプレート既定の `ec2-user` が新しい SVM で解決できないことは、本リポジトリではまだ観測していない [未測定]。この FS の既存の UNIX Access Point 2 本は `root` で AVAILABLE [実測: 2026-11-10]。root は全ファイルを認可するため推奨構成ではなく、検証では測定条件として記録する。`FileSystemIdentity` は作成後に変更できない。
+- VPC に S3 Gateway エンドポイントが既にあり、タスク / Pod のサブネットのルートテーブルを覆っている場合は、`CreateS3GatewayEndpoint=false` で再利用する。同一サービスへのエンドポイントルートは 1 つのルートテーブルに 1 つしか持てないため、重ねて作ると失敗する [文書]([Gateway endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/vpce-gateway.html))。再利用の経路(`CreateS3GatewayEndpoint=false`)で構成 3・4 がデプロイでき、S3 呼び出しが通ることは確認した(5.4)[実測]。重ねて作ると失敗することは確認していない [未測定]。
+- 構成 4 は、Fargate のみのクラスタで CoreDNS が動くように、`kube-system` + `k8s-app=kube-dns` に一致する Fargate profile と、`computeType=Fargate` の coredns add-on を作る。CoreDNS は既定で EC2 前提のため、これが無いと Pod は名前解決できず、S3 SDK が動かない [文書]([Get started with AWS Fargate](https://docs.aws.amazon.com/eks/latest/userguide/fargate-getting-started.html))。`computeType` は coredns add-on の設定項目として実在する [実測: 2026-11-10、`describe-addon-configuration`]。デプロイすると、CoreDNS の Pod が Fargate 上で Running になることを確認した(5.4)[実測]。<!-- spoke-checked: computetype --> <!-- spoke-checked: pods -->
+- `FileSystemIdentity`(UNIX ユーザー)は、SVM が名前解決できるユーザーでなければならない。Hub の実測は、SVM のローカル(`files`)に作ったユーザーで Access Point が AVAILABLE になり読み書きできたこと、非 root の `nobody` を固定すると root 所有・755 のボリュームで書き込みが拒否されたことを記録している [文書]([Hub: Access Point の認可の層(日本語)](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/security-governance/notes/access-point-authorization-layers.md)、実測日 2026-08-17 / 18)。`ec2-user`(AWS の CLI 例に出てくる名前で、以前のテンプレート既定値)は、新しい SVM では解決できない。このため `FileSystemUnixUser` は既定値を持たない必須パラメータにした。パラメータを省略すると、リソースを作る前に `Parameters: [FileSystemUnixUser] must have values` で止まる(構成 3・4 のテンプレートで確認)[実測]。作成 API は成功を返し、約 45 秒後に Access Point が FAILED になった(5.4)[実測]。この FS の既存の UNIX Access Point 2 本は `root` で AVAILABLE [実測: 2026-11-10]。root は全ファイルを認可するため推奨構成ではなく、検証では測定条件として記録する。`FileSystemIdentity` は作成後に変更できない。
 - 認証はコンテナ側の IAM ロール。構成 3(ECS Fargate)はタスクロール、構成 4(EKS Fargate)は IRSA(OIDC プロバイダ + IAM ロール + サービスアカウントの注釈)。
 
 **アクセスポイントポリシーの循環回避**: タスク / IRSA ロールがアクセスポイント ARN を参照し、アクセスポイントポリシーがそのロール ARN を参照すると循環する。同一アカウントでは identity policy とアクセスポイントポリシーのどちらかが許可すれば成立するため、アクセスポイントポリシーの Principal をアカウントルートにし、ロール側の identity policy でアクセスポイントを絞った。VPC origin が VPC 外の要求を deny する。
 
-**IRSA の trust condition(構成 4)**: condition のキー `<OIDC発行者>:aud` と `:sub` には発行者ホストが入り、CloudFormation は map の**キー**に intrinsic function を置けない。そこでテンプレートは trust policy を `Fn::Sub` で包んだ JSON 文書にし、発行者 URL から `https://` を除いたホストを変数として渡す。ロールは作成時から `aud` と、名前空間 + サービスアカウントの `sub` に絞られ、デプロイ後に手で足す作業は無い。この書き方には AWS re:Post に動作例がある [文書]([StringEquals with Sub in both key and value](https://repost.aws/questions/QUyqQ4VGzLRqKDZgI-RloR2A/cloudformation-stringequals-with-sub-in-both-key-and-value))。構文は cfn-lint を通るが、デプロイは未実施で、絞りが効くこと(別のサービスアカウントの Pod が拒否されること)は未確認 [未測定]。EKS Pod Identity は Fargate の Pod に使えないため、構成 4 は IRSA を使う [文書]。<!-- spoke-checked: pods -->
+**アクセスポイントポリシーの `Resource`**: `Resource: '*'` は S3 Control に拒否される(`Invalid policy: Policy has invalid resource`、スタックは `CREATE_FAILED` でロールバック)[実測: 2026-11-10]。ARN をアクセスポイント自身に向ける必要があるため、テンプレートはアクセスポイント ARN とその `/object/*` を、リテラルの名前から `Fn::Sub` で組み立てる。`Fn::GetAtt` は使わないので、ポリシーが自分の属するリソースに依存する循環は生じない。
+
+**IRSA の trust condition(構成 4)**: condition のキー `<OIDC発行者>:aud` と `:sub` には発行者ホストが入り、CloudFormation は map の**キー**に intrinsic function を置けない。そこでテンプレートは trust policy を `Fn::Sub` で包んだ JSON 文書にし、発行者 URL から `https://` を除いたホストを変数として渡す。ロールは作成時から `aud` と、名前空間 + サービスアカウントの `sub` に絞られ、デプロイ後に手で足す作業は無い。この書き方には AWS re:Post に動作例がある [文書]([StringEquals with Sub in both key and value](https://repost.aws/questions/QUyqQ4VGzLRqKDZgI-RloR2A/cloudformation-stringequals-with-sub-in-both-key-and-value))。デプロイして、別のサービスアカウントの Pod が `AssumeRoleWithWebIdentity` で拒否されることを確認した(5.4)[実測]。EKS Pod Identity は Fargate の Pod に使えないため、構成 4 は IRSA を使う [文書]。<!-- spoke-checked: pods -->
 
 ### 5.3 オブジェクト API の制約 [文書]
 
@@ -161,6 +163,51 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 - ストレージクラスは FSX_ONTAP のみ、サーバーサイド暗号化は SSE-FSX のみ。
 - 非対応: バージョニング、Object Lock、ライフサイクル、条件付き書き込み、Requester Pays、静的 Web ホスティング、`bucket-owner-full-control` 以外の ACL。
 - CopyObject / UploadPartCopy は同一アクセスポイント内・同一リージョンのみ。
+
+### 5.4 構成 3・4 の実機確認結果
+
+**範囲**: 2026-11-10、ap-northeast-1、既存の Single-AZ(128 MBps)の FSx for ONTAP 上に作った使い捨ての SVM とボリューム 2 本(UNIX スタイル、1 GiB)。Access Point はこの 2 本にだけ付け、既存の SVM / ボリューム / Access Point には触れていない。`FileSystemIdentity` は `root`(測定条件であり推奨構成ではない)。各項目 1 回の観測。テンプレートは 5.2 の `Resource` 修正を入れたもの。この確認は小規模であり、性能、export policy の絞り込み、Multi-AZ、複数クライアントの同時書き込み、大きなオブジェクトは含まない。
+
+**構成 3(ECS Fargate)**
+
+| 項目 | 結果 [実測] |
+|---|---|
+| 最初のデプロイ | `AWS::FSx::S3AccessPointAttachment` で `CREATE_FAILED`(`Invalid policy: Policy has invalid resource`)。原因はポリシーの `Resource: '*'`(5.2)。修正後は `CREATE_COMPLETE`、Access Point は AVAILABLE、サービスは定常状態(1/1) |
+| 書き込みと読み出し | プライベートサブネットの Fargate タスクから、alias と ARN の両方を `--bucket` に渡して PutObject / GetObject が通った。3 オブジェクト(プレフィックス付きを含む)の sha256 が書き込み前後で一致した。ListObjectsV2 はプレフィックスと区切り文字の指定どおりに返り、StorageClass は `FSX_ONTAP`、暗号化は `aws:fsx` と表示された |
+| タスクをまたぐ永続 | 別 AZ の別タスクで読むと 3 オブジェクトとも一致した |
+| VPC 外からの呼び出し | 管理者権限の IAM プリンシパルでも AccessDenied(リソースベースポリシーの明示 deny)。VPC origin の絞りが効いている |
+| 既存の S3 Gateway エンドポイントの再利用 | `CreateS3GatewayEndpoint=false` でエンドポイントを作らずにデプロイでき、上の呼び出しが通った |
+| `FileSystemIdentity=ec2-user`(対照) | 新しい SVM で作成 API は成功を返し、約 45 秒後に Lifecycle が FAILED、理由は「ONTAP でユーザーを検索できなかった」。削除して消えたことを確認した |
+
+**NFS 側からの確認(マルチプロトコル)**: 同じボリュームを構成 1 のテンプレート(NFS v4.1、2049 のみ)で EC2 ホストにマウントした。S3 で書いたオブジェクトは NFS ではファイルとして見え、sha256 が一致した(所有者は root、グループは daemon、モード 644)。NFS で書いたファイルは S3 の GetObject で読め、ListObjectsV2 にも出た。S3 の PutObject の約 28 秒後と約 100 秒後のどちらの NFS 読み取りでも見えた。それより短い間隔の可視性は測っていない [未測定]。
+
+**非 root ユーザーでの権限(構成 3)**: 別の使い捨て SVM とボリューム(UNIX スタイル、1 GiB)で確認した。SVM の管理者パスワードは SVM 作成時に指定し、VPC 内の EC2 から SVM の管理エンドポイントへ ONTAP REST API(`vsadmin`)で、ローカル UNIX ユーザー `s3ap_app`(UID 1001)を作成した(`POST /api/name-services/unix-users`)。新しい SVM には `root`、`nobody`、`pcuser` が最初からある。ボリュームにはモードビットだけで、次の構成を用意した: `app/`(所有者 1001、755)、`shared-ro/`(root、755、既存ファイル 1 つ)、`public.txt`(root、644)、`secret.txt`(root、600)。`FileSystemUnixUser=s3ap_app` で構成 3 をデプロイした。
+
+| 操作 | 結果 [実測] |
+|---|---|
+| アクセスポイント | AVAILABLE |
+| `app/` への PutObject / GetObject | 成功。NFS 側では所有者 1001、モード 644 のファイルとして見えた |
+| ボリュームのルートへの PutObject | AccessDenied(ルートは root 所有の 755) |
+| `shared-ro/` への PutObject | AccessDenied |
+| `public.txt`(644)と `shared-ro/` の既存ファイルの GetObject | 成功(その他に読み取り権限がある) |
+| `secret.txt`(600、root 所有)の GetObject | AccessDenied |
+| DeleteObject | IAM で拒否。タスクロールに `s3:DeleteObject` を与えておらず、ファイル権限の検証にはなっていない |
+
+つまり、`root` 以外のユーザーを指定すれば、ファイルのモードビットで読み書きの範囲が絞られた。アクセスポイントのポリシーとは別の層である。
+
+ONTAP 側で詰まった点が 1 つある。NFSv4.1 のクライアントから `chown 1001` をすると、所有者が `nobody`(65534)になった。クライアントに同じ UID と名前のユーザー(`s3ap_app`)を作り、`chown s3ap_app` と名前で指定すると、所有者が 1001 になった。SVM の NFS サービスの ID ドメインは、クライアントの既定と同じ(VPC の内部 DNS ドメイン)だった。ID ドメインを一度別の値に変えて元に戻した。NFSv4 の numeric IDs の設定は、この REST API のバージョンでは見つけられなかった。
+
+**構成 4(EKS Fargate、Kubernetes 1.35)**
+
+| 項目 | 結果 [実測] |
+|---|---|
+| デプロイ | `CREATE_COMPLETE`。CoreDNS の Pod 2 つが Fargate 上で Running(coredns add-on の `computeType` は `Fargate`、ステータス ACTIVE)。`kube-system` + `k8s-app=kube-dns` の Fargate profile だけで足り、手作業の追加は無かった |
+| IRSA での書き込みと読み出し | 注釈を付けたサービスアカウントの Pod から PutObject / GetObject / ListObjectsV2 が通り、sha256 が一致した |
+| 別のサービスアカウント(対照) | 同じロール ARN を注釈しても、名前が trust の `sub` と違うサービスアカウントの Pod は `AssumeRoleWithWebIdentity` で AccessDenied |
+| 注釈なし(対照) | 認証情報が見つからず、呼び出しは失敗した |
+| Pod の再作成 | Pod を削除して作り直し、先に書いたオブジェクトが一致して読めた |
+
+撤去後は、SVM、ボリューム、バックアップ、Access Point、VPC エンドポイント、OIDC プロバイダ、ECS / EKS クラスタ、CloudFormation スタック、FSx のセキュリティグループの ingress、この VPC のネットワークインターフェイス数(72)がベースラインと一致した。
 
 ---
 
@@ -186,10 +233,10 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 
 | # | 項目 | 調査 / 検証の状態(2026-09-22) |
 |---|---|---|
-| V1 | 4 構成のデプロイとデータ疎通 | 構成 2 は 2026-10-29(4.3)、構成 1 は 2026-11-10(3.3)に確認 [実測]。構成 3・4 は未実施で、cfn-lint のみ [実測] |
+| V1 | 4 構成のデプロイとデータ疎通 | 構成 2 は 2026-10-29(4.3)、構成 1・3・4 は 2026-11-10(3.3、5.4)に確認 [実測] |
 | V2 | Trident EKS アドオンの現行名・バージョン | 2026-10-29 の ap-northeast-1 で `netapp_trident-operator` が存在し、既定は v26.6.2-eksbuild.1、対応する Kubernetes は 1.36 まで [実測]。名称と版は変わりうるため、デプロイ前に再確認する。Trident 26.10 と Kubernetes 1.37 は 9.3 |
 | V3 | EKS Pod Identity の Fargate 対応可否 | 解決: Fargate の Pod には使えない [文書]([Pod Identity の制約](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)、2026-11-10 に確認)。本メモが IRSA を採るのはこのため |
-| V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | 実機で権限設計を確認する必要あり [未測定] |
+| V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | `root` では読み書きでき、SVM が解決できない `ec2-user` では Access Point が FAILED になった。SVM のローカルユーザー(非 root)では、モードビットどおりに読み書きの範囲が絞られた(5.4)[実測]。ACL(NFSv4 ACL)や AD ユーザー(NTFS)との対応は確認していない [未測定] |
 | V5 | S3 Access Point 経由の実効スループット | 文書は「ファイルシステムのプロビジョンドスループット依存」と記載。実測は未実施 [未測定] |
 
 ### 7.1 デプロイ準備(実機検証の前段)
@@ -208,9 +255,9 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 | 準備 | 対応する未検証項目 | 確認手段 |
 |---|---|---|
 | Trident EKS アドオンの現行名・バージョン | V2 | `aws eks describe-addon-versions --addon-name netapp_trident-operator`。2026-10-29 の ap-northeast-1 では v26.6.2-eksbuild.1 が既定で、本メモの 25.02 参照から進んでいる [実測] |
-| S3 Access Point の二層認可(IAM + ファイルシステムレベルの UNIX / Windows ユーザー) | V4 | アクセスポイントに紐づく UNIX ユーザーと ONTAP 側のファイル権限の対応を実機で設計する [文書] |
+| S3 Access Point の二層認可(IAM + ファイルシステムレベルの UNIX / Windows ユーザー) | V4 | アクセスポイントに紐づく UNIX ユーザーと ONTAP 側のファイル権限の対応を実機で設計する。`root` と、ローカル UNIX ユーザーの挙動は 5.4 に記録した。NFSv4 ACL と Windows ユーザーは未確認 [文書] |
 | 対象リージョンでの提供 | V1 全般 | 第 2 世代 FSx for ONTAP は 2026-04 に 4 リージョン + GovCloud へ拡大。S3 Access Points は東京(ap-northeast-1)対応 [文書]。使うリージョンでの提供を確認する |
-| IRSA の trust condition(EKS Fargate) | V3 | trust は `aud` / `sub` で作成時に絞られる(5.2)。絞りが効くことは実機で確認する(別のサービスアカウントの Pod が拒否されること) |
+| IRSA の trust condition(EKS Fargate) | V3 | trust は `aud` / `sub` で作成時に絞られる(5.2)。絞りが効くこと(別のサービスアカウントの Pod が拒否されること)は 2026-11-10 に確認した(5.4)[実測] |
 
 **推奨デプロイ順序**: 最小の構成 1(ECS on EC2 + NFS、CloudFormation 完結・Trident 不要・S3 Access Points 不要)から始める。疎通(タスクから `/data` への読み書き)を確認したら削除し、構成 2(Trident の Kubernetes オブジェクトを kubectl / Helm で適用)、構成 3・4(S3 Access Points、IRSA の手動手順あり)へ段階的に進む。
 
