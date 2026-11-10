@@ -17,8 +17,8 @@ All four configurations can use FSx for ONTAP as a data area. But **the access f
 |---|---|---|---|---|---|
 | 1 | ECS on EC2 | NFS mounted on the EC2 host → bind mount | None (keeps file I/O) | [Authored](../../templates/containers-ecs-ec2-fsxn-nfs.yaml) | [Documented]・[Tested] (3.3) |
 | 2 | EKS on EC2 | Trident CSI PV (NFS `ontap-nas` / iSCSI `ontap-san`) | None (keeps file I/O) | [Authored](../../templates/containers-eks-ec2-fsxn-trident.yaml) | [Documented] · [Tested] (4.3) |
-| 3 | ECS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-ecs-fargate-fsxn-s3ap.yaml) | [Documented] |
-| 4 | EKS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-eks-fargate-fsxn-s3ap.yaml) | [Documented] |
+| 3 | ECS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-ecs-fargate-fsxn-s3ap.yaml) | [Documented]・[Tested] (5.4) |
+| 4 | EKS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-eks-fargate-fsxn-s3ap.yaml) | [Documented]・[Tested] (5.4) |
 
 **Key point**: Fargate cannot use FSx for ONTAP through a volume mount, but it can through **object access** via S3 Access Points. If you want to keep file I/O as-is, choose the EC2 configurations (1 / 2); if you take serverless operation, choose the Fargate configurations (3 / 4) and move the app to the S3 SDK. That is the trade-off.
 
@@ -32,7 +32,7 @@ All four configurations can use FSx for ONTAP as a data area. But **the access f
 | **[Documented]** | Stated in AWS / NetApp docs, not verified in a real environment. Source URL included |
 | **[Not measured]** | Not executed, or out of scope here. Investigation date and scope included |
 
-The CloudFormation in this memo passes static verification (cfn-lint) as [Tested]. Configs 1 (3.3) and 2 (4.3) were deployed and checked at small scale. **Configs 3 and 4 have not been verified to deploy and work** [Not measured].
+The CloudFormation in this memo passes static verification (cfn-lint) as [Tested]. Configs 1 (3.3), 2 (4.3), and 3 and 4 (5.4) were deployed and checked at small scale.
 
 ---
 
@@ -144,14 +144,16 @@ Supported regions include Tokyo (ap-northeast-1) [Documented].
 
 - The FSx for ONTAP S3 access point can be created with the CloudFormation resource `AWS::FSx::S3AccessPointAttachment` (not CLI-only). Set the network origin to VPC and specify the UNIX user that authorizes file access.
 - In-VPC S3 traffic goes through the free S3 Gateway VPC endpoint, which populates `aws:SourceVpc` so a VPC-origin access point accepts the request.
-- If the VPC already has an S3 Gateway endpoint covering the route table of the task / Pod subnets, reuse it with `CreateS3GatewayEndpoint=false`. A route table can hold only one endpoint route to the same service, so creating a second one fails [Documented] ([Gateway endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/vpce-gateway.html)). That the creation actually fails has not been observed [Not measured].
-- For Config 4, so that CoreDNS runs on a Fargate-only cluster, the template creates a Fargate profile that matches `kube-system` + `k8s-app=kube-dns` and a coredns add-on with `computeType=Fargate`. CoreDNS is scheduled onto EC2 by default, so without this the Pods cannot resolve names and the S3 SDK fails [Documented] ([Get started with AWS Fargate](https://docs.aws.amazon.com/eks/latest/userguide/fargate-getting-started.html)). `computeType` exists as a configuration key of the coredns add-on [Tested: 2026-11-10, `describe-addon-configuration`]. That it works when deployed has not been checked [Not measured]. <!-- spoke-checked: computetype --> <!-- spoke-checked: pods -->
-- The `FileSystemIdentity` (a UNIX user) must be a user the SVM can resolve. The hub's measurements record that an access point whose user was created in the SVM's local (`files`) database became AVAILABLE and could read and write, and that pinning a non-root `nobody` made writes fail on a root-owned, 755 volume [Documented] ([Hub: layers of access point authorization (Japanese)](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/security-governance/notes/access-point-authorization-layers.md), measured 2026-08-17 / 18). That the template's default `ec2-user` cannot be resolved on a new SVM has not been observed in this repository [Not measured]. The two existing UNIX access points on this file system use `root` and are AVAILABLE [Tested: 2026-11-10]. Root authorizes every file, so it is not a recommended setup; a verification records it as a measurement condition. `FileSystemIdentity` cannot be changed after creation.
+- If the VPC already has an S3 Gateway endpoint covering the route table of the task / Pod subnets, reuse it with `CreateS3GatewayEndpoint=false`. A route table can hold only one endpoint route to the same service, so creating a second one fails [Documented] ([Gateway endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/vpce-gateway.html)). Configs 3 and 4 deployed through the reuse path (`CreateS3GatewayEndpoint=false`) and the S3 calls succeeded (5.4) [Tested]. That creating a second one fails has not been observed [Not measured].
+- For Config 4, so that CoreDNS runs on a Fargate-only cluster, the template creates a Fargate profile that matches `kube-system` + `k8s-app=kube-dns` and a coredns add-on with `computeType=Fargate`. CoreDNS is scheduled onto EC2 by default, so without this the Pods cannot resolve names and the S3 SDK fails [Documented] ([Get started with AWS Fargate](https://docs.aws.amazon.com/eks/latest/userguide/fargate-getting-started.html)). `computeType` exists as a configuration key of the coredns add-on [Tested: 2026-11-10, `describe-addon-configuration`]. When deployed, the CoreDNS Pods reached Running on Fargate (5.4) [Tested]. <!-- spoke-checked: computetype --> <!-- spoke-checked: pods -->
+- The `FileSystemIdentity` (a UNIX user) must be a user the SVM can resolve. The hub's measurements record that an access point whose user was created in the SVM's local (`files`) database became AVAILABLE and could read and write, and that pinning a non-root `nobody` made writes fail on a root-owned, 755 volume [Documented] ([Hub: layers of access point authorization (Japanese)](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/security-governance/notes/access-point-authorization-layers.md), measured 2026-08-17 / 18). The template's default `ec2-user` cannot be resolved on a new SVM: the create API returned success and the access point went to FAILED about 45 seconds later (5.4) [Tested]. The two existing UNIX access points on this file system use `root` and are AVAILABLE [Tested: 2026-11-10]. Root authorizes every file, so it is not a recommended setup; a verification records it as a measurement condition. `FileSystemIdentity` cannot be changed after creation.
 - Authentication is a container-side IAM role. Config 3 (ECS Fargate) uses the task role; Config 4 (EKS Fargate) uses IRSA (OIDC provider + IAM role + service account annotation).
 
 **Avoiding the access point policy cycle**: if the task / IRSA role references the access point ARN and the access point policy references that role ARN, they cycle. In the same account, either the identity policy or the access point policy granting access is sufficient, so the access point policy's Principal is set to the account root and the role's identity policy scopes to the access point. VPC origin denies any request from outside the VPC.
 
-**IRSA trust condition (Config 4)**: the condition keys `<oidc-issuer>:aud` and `:sub` contain the issuer host, and CloudFormation cannot put an intrinsic function in a map *key*. So the template writes the trust policy as a JSON document wrapped in `Fn::Sub` and passes the issuer host (the issuer URL without `https://`) as a variable. The role is scoped to `aud` and to the `sub` of one namespace + service account from creation, with no manual step after deployment. This form has a working example on AWS re:Post [Documented] ([StringEquals with Sub in both key and value](https://repost.aws/questions/QUyqQ4VGzLRqKDZgI-RloR2A/cloudformation-stringequals-with-sub-in-both-key-and-value)). The syntax passes cfn-lint, but the template has not been deployed, and that the scoping works (a Pod under a different service account is refused) has not been checked [Not measured]. EKS Pod Identity cannot be used for Pods on Fargate, so Config 4 uses IRSA [Documented]. <!-- spoke-checked: pods -->
+**`Resource` in the access point policy**: S3 Control rejects `Resource: '*'` (`Invalid policy: Policy has invalid resource`; the stack went to `CREATE_FAILED` and rolled back) [Tested: 2026-11-10]. The resource must be the access point itself, so the template builds the access point ARN and its `/object/*` form with `Fn::Sub` from the literal name. It does not use `Fn::GetAtt`, so the policy does not depend on the resource it belongs to.
+
+**IRSA trust condition (Config 4)**: the condition keys `<oidc-issuer>:aud` and `:sub` contain the issuer host, and CloudFormation cannot put an intrinsic function in a map *key*. So the template writes the trust policy as a JSON document wrapped in `Fn::Sub` and passes the issuer host (the issuer URL without `https://`) as a variable. The role is scoped to `aud` and to the `sub` of one namespace + service account from creation, with no manual step after deployment. This form has a working example on AWS re:Post [Documented] ([StringEquals with Sub in both key and value](https://repost.aws/questions/QUyqQ4VGzLRqKDZgI-RloR2A/cloudformation-stringequals-with-sub-in-both-key-and-value)). When deployed, a Pod under a different service account was refused with `AssumeRoleWithWebIdentity` AccessDenied (5.4) [Tested]. EKS Pod Identity cannot be used for Pods on Fargate, so Config 4 uses IRSA [Documented]. <!-- spoke-checked: pods -->
 
 ### 5.3 Object API constraints [Documented]
 
@@ -161,6 +163,35 @@ Because access is via the S3 SDK, the app must be written for object access. It 
 - Storage class is FSX_ONTAP only; server-side encryption is SSE-FSX only.
 - Not supported: versioning, Object Lock, lifecycle, conditional writes, Requester Pays, static website hosting, ACLs other than `bucket-owner-full-control`.
 - CopyObject / UploadPartCopy are same-access-point and same-Region only.
+
+### 5.4 Hands-on results for configs 3 and 4
+
+**Scope**: 2026-11-10, ap-northeast-1, a disposable SVM and two volumes (UNIX style, 1 GiB) created on the existing Single-AZ FSx for ONTAP (128 MBps). The access points were attached to these two volumes only; no existing SVM, volume, or access point was touched. `FileSystemIdentity` was `root` (a measurement condition, not a recommended setup). One observation per item. The templates included the `Resource` fix from 5.2. This is a small-scale check; it does not cover performance, permission design with a non-root user, narrowing the export policy, Multi-AZ, concurrent writes from several clients, or large objects.
+
+**Config 3 (ECS Fargate)**
+
+| Item | Result [Tested] |
+|---|---|
+| First deployment | `CREATE_FAILED` at `AWS::FSx::S3AccessPointAttachment` (`Invalid policy: Policy has invalid resource`). The cause was `Resource: '*'` in the policy (5.2). After the fix: `CREATE_COMPLETE`, the access point AVAILABLE, and the service at steady state (1/1) |
+| Write and read | From a Fargate task in a private subnet, PutObject / GetObject worked with both the alias and the ARN passed as `--bucket`. The sha256 of three objects (one with a prefix) matched before and after. ListObjectsV2 honored prefix and delimiter; StorageClass showed `FSX_ONTAP` and encryption `aws:fsx` |
+| Persistence across tasks | A different task in a different AZ read all three objects and the hashes matched |
+| Call from outside the VPC | AccessDenied even for an administrator IAM principal (explicit deny in the resource-based policy). The VPC-origin scoping works |
+| Reusing the existing S3 Gateway endpoint | With `CreateS3GatewayEndpoint=false` the stack deployed without creating an endpoint, and the calls above succeeded |
+| `FileSystemIdentity=ec2-user` (control) | On a new SVM the create API returned success, the Lifecycle went to FAILED about 45 seconds later, and the reason was that the user could not be looked up in ONTAP. Deleted and confirmed gone |
+
+**From the NFS side (multiprotocol)**: the same volume was mounted on an EC2 host with the config 1 template (NFS v4.1, port 2049 only). Objects written through S3 appeared as files over NFS with matching sha256 (owner root, group daemon, mode 644). A file written over NFS was readable with S3 GetObject and appeared in ListObjectsV2. An NFS read about 28 seconds and another about 100 seconds after the S3 PutObject both saw the object. Visibility at shorter intervals was not measured [Not measured].
+
+**Config 4 (EKS Fargate, Kubernetes 1.35)**
+
+| Item | Result [Tested] |
+|---|---|
+| Deployment | `CREATE_COMPLETE`. Two CoreDNS Pods were Running on Fargate (the coredns add-on's `computeType` was `Fargate`, status ACTIVE). The Fargate profile for `kube-system` + `k8s-app=kube-dns` was enough; no manual step was needed |
+| Write and read with IRSA | From a Pod under the annotated service account, PutObject / GetObject / ListObjectsV2 worked and the sha256 matched |
+| Different service account (control) | With the same role ARN annotated, a Pod under a service account whose name differs from the trust `sub` got AccessDenied on `AssumeRoleWithWebIdentity` |
+| No annotation (control) | No credentials were found and the call failed |
+| Pod recreation | After deleting and recreating the Pod, the earlier object was readable with a matching hash |
+
+After teardown, the SVM, volumes, backups, access points, VPC endpoints, OIDC providers, ECS / EKS clusters, CloudFormation stacks, the FSx security group ingress rules, and the network interface count in this VPC (72) matched the baseline.
 
 ---
 
@@ -186,10 +217,10 @@ Confirmed that `make cfn-lint` (cfn-lint, `templates/*.yaml`) passes with exit 0
 
 | # | Item | Research / verification state (2026-09-22) |
 |---|---|---|
-| V1 | Deploying the four configurations and data connectivity | Config 2 was checked on 2026-10-29 (4.3) and config 1 on 2026-11-10 (3.3) [Tested]. Configs 3 and 4 are not done; only cfn-lint is [Tested] |
+| V1 | Deploying the four configurations and data connectivity | Config 2 was checked on 2026-10-29 (4.3) and configs 1, 3, and 4 on 2026-11-10 (3.3, 5.4) [Tested] |
 | V2 | Current Trident EKS add-on name and version | On 2026-10-29 in ap-northeast-1, `netapp_trident-operator` existed, the default was v26.6.2-eksbuild.1, and the highest supported Kubernetes version was 1.36 [Tested]. Names and versions change, so reconfirm before deploying. Trident 26.10 and Kubernetes 1.37 are in 9.3 |
 | V3 | Whether EKS Pod Identity works on Fargate | Resolved: it cannot be used for Pods on Fargate [Documented] ([Pod Identity restrictions](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html), checked 2026-11-10). This is why this memo uses IRSA |
-| V4 | Mapping of the S3 access point UNIX user to ONTAP-side permissions | Permission design to confirm on real hardware [Not measured] |
+| V4 | Mapping of the S3 access point UNIX user to ONTAP-side permissions | With `root` reads and writes worked, and with `ec2-user`, which the SVM cannot resolve, the access point went to FAILED (5.4) [Tested]. The mapping for a non-root user and file permissions has not been checked [Not measured] |
 | V5 | Effective throughput via the S3 access point | Docs state "depends on the file system's provisioned throughput". Not measured [Not measured] |
 
 ### 7.1 Deployment prerequisites (the stage before hands-on verification)
@@ -208,9 +239,9 @@ Before confirming V1–V5 on real infrastructure, these are the prerequisites, o
 | Preparation | Related unverified item | How to confirm |
 |---|---|---|
 | Current Trident EKS add-on name / version | V2 | `aws eks describe-addon-versions --addon-name netapp_trident-operator`. On 2026-10-29 in ap-northeast-1 the default was v26.6.2-eksbuild.1, ahead of this memo's 25.02 reference [Tested] |
-| S3 Access Point dual-layer authorization (IAM + file-system-level UNIX / Windows user) | V4 | Design the mapping between the access point's UNIX user and the ONTAP file permissions on real infra [Documented] |
+| S3 Access Point dual-layer authorization (IAM + file-system-level UNIX / Windows user) | V4 | Design the mapping between the access point's UNIX user and the ONTAP file permissions on real infra. The `root` behavior is recorded in 5.4; non-root is unchecked [Documented] |
 | Availability in the target region | V1 in general | Second-generation FSx for ONTAP expanded to four regions + GovCloud in 2026-04. S3 Access Points support Tokyo (ap-northeast-1) [Documented]. Confirm availability in the region you use |
-| IRSA trust condition (EKS Fargate) | V3 | The trust is scoped by `aud` / `sub` from creation (5.2). Confirm on real infrastructure that the scoping works (a Pod under a different service account is refused) |
+| IRSA trust condition (EKS Fargate) | V3 | The trust is scoped by `aud` / `sub` from creation (5.2). That the scoping works (a Pod under a different service account is refused) was confirmed on 2026-11-10 (5.4) [Tested] |
 
 **Recommended deployment order**: start with the smallest, config 1 (ECS on EC2 + NFS, which is CloudFormation-complete, with no Trident and no S3 Access Points). Once the data path is confirmed (read/write to `/data` from a task), delete it, then proceed step by step to config 2 (apply Trident's Kubernetes objects via kubectl / Helm) and configs 3 / 4 (S3 Access Points, with the manual IRSA step).
 
