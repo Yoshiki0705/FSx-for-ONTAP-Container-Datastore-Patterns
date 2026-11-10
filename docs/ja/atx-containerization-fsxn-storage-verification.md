@@ -267,7 +267,7 @@ Pod ごとに専用の Nitro Sandbox(Firecracker の microVM)で動かす機能�
 | 対照: 隔離 Pod が `emptyDir` だけを使う | 成立。Pod 内のカーネルは 6.18.54、通常ノードは 6.18.56 で、別のカーネルで動いている |
 | 対照: 隔離 Pod が Amazon EBS の PVC(Auto Mode の EBS CSI)をマウント | 成立。書き込みと読み戻しができた |
 
-隔離 Pod は同じクラスタ、同じノード種別(c8a.large)で成立しており、EBS の PVC も使えた。失敗したのは Trident の NFS の PV だけである。この結果は、同ページがストレージとして挙げた方式に Trident が含まれないことと整合する。失敗の原因そのもの(NodePublish がホスト側で完了しているのに Sandbox にマウント先が引き渡されない、といった推測)は、Trident の info レベルのログに記録が無く、切り分けていない。1 回の観測で、再現と別バージョンでの挙動は未確認である。
+隔離 Pod は同じクラスタ、同じノード種別(c8a.large)で成立しており、EBS の PVC も使えた。失敗したのは Trident の NFS の PV だけである。この結果は、同ページがストレージとして挙げた方式に Trident が含まれないことと整合する。AWS のサンプル集には、隔離 Pod の永続ストレージとして `ebs`、`efs`、`s3-files` の 3 つのブループリントがある(出典: [sample-eks-nitro-sandbox の storage](https://github.com/aws-samples/sample-eks-nitro-sandbox/tree/main/examples/storage))。FSx for ONTAP を隔離 Pod の永続ストレージにする公開された手順は見つかっていない。失敗の原因そのもの(NodePublish がホスト側で完了しているのに Sandbox にマウント先が引き渡されない、といった推測)は、Trident の info レベルのログに記録が無く、切り分けていない。1 回の観測で、再現と別バージョンでの挙動は未確認である。
 
 iSCSI の PV を隔離 Pod に渡せるかは、Auto Mode のノードで iSCSI 自体が使えなかったため(9.2)、確かめられていない。`sandbox.amazonaws.com/network-isolated: "true"` の Pod はネットワークデバイスを持たず、EFS は使えないと明記されている。同じ理由でネットワーク経由の FSx for ONTAP にも到達できないと推測するが、これは試していない。
 
