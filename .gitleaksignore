@@ -7,3 +7,8 @@
 # elsewhere still fails the gate.
 params/containers-ecs-ec2-fsxn-nfs.example.json:generic-api-key:11
 params/containers-ecs-ec2-fsxn-nfs.example.json:generic-api-key:15
+
+# Commit 9d7d3dc quoted the generic EC2 internal DNS domain (an NFSv4 ID domain
+# value) in the results text; later removed. Not a secret. Scoped to that commit.
+9d7d3dceb1826a65b35d3f12280b230ee2811c7f:docs/en/atx-containerization-fsxn-storage-verification.md:internal-hostname:198
+9d7d3dceb1826a65b35d3f12280b230ee2811c7f:docs/ja/atx-containerization-fsxn-storage-verification.md:internal-hostname:198
