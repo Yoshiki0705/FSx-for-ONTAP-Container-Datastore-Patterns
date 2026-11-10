@@ -48,7 +48,7 @@ Fargate はボリュームマウントで FSx for ONTAP を使えないため、
 ## ドキュメント
 
 - [コンテナ化への派生と FSx for ONTAP の連携可否](docs/ja/atx-containerization-fsxn-derivation.md)
-- [コンテナ移行先での FSx for ONTAP データストア構成の検証](docs/ja/atx-containerization-fsxn-storage-verification.md)。実機デプロイの前提・順序・落とし穴・後始末は [7.1 デプロイ準備](docs/ja/atx-containerization-fsxn-storage-verification.md#71-デプロイ準備実機検証の前段)にあります
+- [コンテナ移行先での FSx for ONTAP データストア構成の検証](docs/ja/atx-containerization-fsxn-storage-verification.md)。実機デプロイの前提・順序・落とし穴・後始末は [7.1 デプロイ準備](docs/ja/atx-containerization-fsxn-storage-verification.md#71-デプロイ準備実機検証の前段)にあります。2026-10〜11 の EKS 更新(Nitro Sandbox、Auto Mode の DRA、Trident 26.10 と Kubernetes 1.37)の影響は 9 章です
 - [ECS on EC2 における FSx for ONTAP のマウント](docs/ja/ecs-ec2-fsxn-mount.md)
 - [CloudFormation パラメータファイル](params/README.md) — どのプレースホルダを自分の ID に替えるか、取得コマンド、既存クラスタやストレージクラスの流用方法
 

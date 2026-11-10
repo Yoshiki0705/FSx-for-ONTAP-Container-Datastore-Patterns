@@ -168,7 +168,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 | # | 項目 | 調査 / 検証の状態(2026-09-22) |
 |---|---|---|
 | V1 | 4 構成のデプロイとデータ疎通 | 構成 2 は 2026-10-29 に確認(4.3)[実測]。構成 1・3・4 は未実施で、cfn-lint のみ [実測] |
-| V2 | Trident EKS アドオンの現行名・バージョン | 2026-10-29 の ap-northeast-1 で `netapp_trident-operator` が存在し、既定は v26.6.2-eksbuild.1、対応する Kubernetes は 1.36 まで [実測]。名称と版は変わりうるため、デプロイ前に再確認する |
+| V2 | Trident EKS アドオンの現行名・バージョン | 2026-10-29 の ap-northeast-1 で `netapp_trident-operator` が存在し、既定は v26.6.2-eksbuild.1、対応する Kubernetes は 1.36 まで [実測]。名称と版は変わりうるため、デプロイ前に再確認する。Trident 26.10 と Kubernetes 1.37 は 9.3 |
 | V3 | EKS Pod Identity の Fargate 対応可否 | 本メモは IRSA を採用。Pod Identity の Fargate 対応は未確認 [未測定] |
 | V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | 実機で権限設計を確認する必要あり [未測定] |
 | V5 | S3 Access Point 経由の実効スループット | 文書は「ファイルシステムのプロビジョンドスループット依存」と記載。実測は未実施 [未測定] |
@@ -214,6 +214,60 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 
 ---
 
+## 9. 2026-10〜11 の EKS・コンテナ更新と本構成への影響
+
+**調査範囲**: 2026-11-10 に、EKS ユーザーガイドの Document history(2026-10-10 以降の項目)、AWS What's New 2 件(DRA、Gateway API)、各機能の公式ドキュメント、NetApp Trident 26.10 のリリースノートと要件ページを全文で読んだ。KubeCon North America 2026(11/9〜12)の発表は検索結果の要約しか見ておらず、本文は読んでいない [未測定]。この日は AWS SSO のトークンが失効していたため、EKS アドオンの版は再確認していない [未測定]。以下はすべて [文書] で、本リポジトリで動かしたものは無い。
+
+Trident のドライバ選択(`ontap-nas` と `ontap-san`、Windows の SMB PV は Windows ノードのみ)は Hub の[コンテナデータストア選定](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/reference/decision-trees/container-datastore-selection.md)にある。同ページは Nitro Sandbox、Auto Mode、Trident 26.10 を扱っていないため、本章はその差分である。 <!-- spoke-checked: ontap-nas -->
+
+| 更新 | 構成 2(EKS on EC2 + Trident)への影響 | 構成 3・4(Fargate + S3 Access Points)への影響 |
+|---|---|---|
+| Nitro Sandbox による Pod 単位の隔離(`isolated-sandbox` / `confidential-sandbox`) | 9.1 | 9.1 |
+| EKS Auto Mode と Karpenter の DRA 対応 | 9.2 | なし |
+| Trident 26.10 と Kubernetes 1.37 | 9.3 | なし |
+| Auto Mode の Gateway API、Argo CD 機能の更新、`ec2:CopyVolumes` | 9.4 | なし |
+
+### 9.1 Nitro Sandbox の隔離 Pod とストレージ
+
+Pod ごとに専用の Nitro Sandbox(Firecracker の microVM)で動かす機能で、`runtimeClassName` を Pod 単位で指定する。指定しない Pod は従来のランタイムのままである。EC2 上のノードだけが対象で、Fargate の Pod には関係しない(出典: [Sandboxing on Amazon EKS](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing.html))。
+
+ストレージについて、ドキュメントが挙げる方式は次のとおり(出典: [Storage with Nitro Sandboxes](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing-storage.html))。
+
+- Amazon EBS CSI: ブロックデバイスとして Sandbox に接続する。`ReadWriteOncePod` を使い、1 つのボリュームを複数 Pod で共有できない。
+- Amazon EFS CSI(アドオン 3.5.0 以上): NFS のマウントと TLS の終端を Sandbox の内側で行う。
+- tmpfs を使う CSI ドライバ(Secrets Store、cert-manager)と、`emptyDir` / ConfigMap / Secret。
+
+**Trident(`csi.trident.netapp.io`)による NFS / iSCSI の PV は、このページに記載が無い。** 「サポートされない」とも書かれておらず、対応の有無は文書から判断できない。構成 2 の PV を Sandbox の Pod にマウントできるかは、実機でも試していない [未測定]。試す場合の観点は次の 3 つである。
+
+- ホスト側の iSCSI セッションが作るデバイスを Sandbox に渡せるか。同ページの考慮事項は、ホストデバイスの Sandbox への受け渡し(passthrough)を GPU について非対応と明記している。
+- NFS のマウントを Sandbox の内側で行う EFS CSI と異なり、Trident の node pod はホスト側でマウントする。その結果を Sandbox に渡せるか。
+- `sandbox.amazonaws.com/network-isolated: "true"` の Pod はネットワークデバイスを持たず、EFS は使えないと明記されている。同じ理由でネットワーク経由の FSx for ONTAP(NFS / iSCSI / S3 Access Points)も届かないと推測するが、確認していない。
+
+構成 3・4 で使う S3 Access Points のオブジェクト API は、ネットワーク経由の SDK 呼び出しなので、Sandbox の Pod からも原理的には使える。ただし認証は注意が要る。隔離モードではサービスアカウントのトークンが Sandbox に複製されず、IMDS からは認証情報を取れない(配置情報の 5 パスのみ応答する)。一方で EKS Pod Identity の認証情報は許可されている。構成 4 の IRSA(サービスアカウントのトークンを使う)が隔離モードの Pod で動くかは確認しておらず、Pod Identity を使う設計が文書上は素直である。なお V3 のとおり、Pod Identity の Fargate 対応は別途未測定である。
+
+Sandbox に制約が多い項目(`hostNetwork: true` で起動失敗、`hostUsers: false` 非対応、GPU 非対応、Pod あたりの vCPU 密度の上限など)は、Trident の node pod そのものには当たらないと推測する。node pod が使うのは通常のランタイムで、Sandbox を指定するのはアプリケーションの Pod だからである。この点も文書に明記はない。
+
+### 9.2 Auto Mode と Karpenter の DRA 対応
+
+DRA(Dynamic Resource Allocation)の対象は NVIDIA GPU と EFA で、ストレージのデバイスは対象外である(出典: [What's New](https://aws.amazon.com/about-aws/whats-new/2026/11/amazon-eks-auto-mode-karpenter-dra/))。FSx for ONTAP の PV の払い出しや到達経路は変わらない。Auto Mode の DRA は Kubernetes 1.36 以上、Karpenter は全バージョンが対象である。
+
+間接的な影響は 1 点ある。GPU を使う AI ワークロードが共有データを FSx for ONTAP に置く構成では、Auto Mode の管理ノードにソフトウェアを導入できない(AMI は AWS が決め、SSH もできない)ことが、構成 2 の iSCSI 用ノード準備(4.2 の launch template)と衝突する(出典: [Learn about Amazon EKS Auto Mode Managed instances](https://docs.aws.amazon.com/eks/latest/userguide/automode-learn-instances.html))。このため、本リポジトリの `PrepareNodesForIscsi` の方式は Auto Mode のノードには適用できない。Auto Mode で Trident の NFS が動くか、iSCSI 用ツールを含むかは、読んだ文書のどれにも見つからなかった [未測定]。Auto Mode の管理ノードで FSx for ONTAP を使う設計は、実機で確かめるまで前提に置かない。
+
+### 9.3 Trident 26.10 と Kubernetes 1.37
+
+- EKS は Kubernetes 1.37 を 2026-10-01 に追加した(出典: [Document history](https://docs.aws.amazon.com/eks/latest/userguide/doc-history.html))。Trident 26.10 は Kubernetes 1.27〜1.37 に対応する(出典: [Trident requirements](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html))。テンプレートの `KubernetesVersion` のパターンは 1.37 を許容する。
+- 4.3 と V2 の実機確認で使った EKS アドオンの既定は v26.6.2-eksbuild.1 で、対応する Kubernetes は 1.36 まで(2026-10-29)だった [実測]。EKS アドオンが 26.10.x と 1.37 の組を提供しているかは、今回確認していない [未測定]。1.37 でクラスタを作る前に `aws eks describe-addon-versions --addon-name netapp_trident-operator --kubernetes-version 1.37` で確かめる。
+- **Trident 26.10(26.10.1 より前)にはアップグレードしない。** リリースノートによると、起動時に node pod が使用中のボリュームを切り離し、Pod が `volume … is not staged` で失敗することがある。26.10.1 で修正された(出典: [Trident release notes](https://docs.netapp.com/us-en/trident/trident-rn.html))。アドオンの版を固定するときは 26.10.1 以降を選ぶ。
+- 本リポジトリの構成に関係する 26.10 の変更(リリースノートの記載で、本リポジトリでは動かしていない): `ontap-san` / `ontap-san-economy` で新規ボリュームの ONTAP オートサイズ、一部の iSCSI パスが使えない状態でのボリューム拡張、`enableConcurrency` 有効時に ONTAP-NAS のエクスポートポリシーのルールが誤って消える不具合の修正、PVC のアノテーション `trident.netapp.io/unixGroupID`(ルートスカッシュのある ONTAP-NAS ボリューム)。
+
+### 9.4 構成 2 の運用に関わるその他の更新
+
+- EKS Auto Mode の Gateway API 対応(2026-10): ALB / NLB による通信制御で、ストレージの経路には関与しない。
+- EKS Capability for Argo CD の通知、ApplicationSet の webhook、source hydrator(2026-10〜11): 4.2 のとおり、TridentBackendConfig / StorageClass / PVC は CloudFormation で作れず、スタック完了後に kubectl などで適用する。この適用を GitOps に載せる選択肢になりうるが、本リポジトリでは試していない。 <!-- spoke-checked: helm -->
+- `ec2:CopyVolumes`(2026-10-26): Auto Mode の EBS CSI が、スナップショットなしで既存の PVC から別の PVC を作るための権限である。EBS ボリュームが対象で、FSx for ONTAP の PV には関与しない。
+
+---
+
 ## 参考リンク
 
 - [Using Amazon Elastic Container Service with FSx for ONTAP](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/mount-ontap-ecs-containers.html)
@@ -224,4 +278,11 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 - [Configuring network access for Amazon S3 access points](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/configuring-network-access-for-s3-access-points.html)
 - [Access point compatibility](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/access-points-for-fsxn-object-api-support.html)
 - [AWS::FSx::S3AccessPointAttachment(CloudFormation)](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-fsx-s3accesspointattachment.html) <!-- allow:naming — literal CloudFormation resource type name -->
+- [Sandboxing on Amazon EKS with isolated and confidential pods](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing.html)
+- [Storage with Nitro Sandboxes](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing-storage.html)
+- [Amazon EKS Auto Mode and Karpenter now support Dynamic Resource Allocation](https://aws.amazon.com/about-aws/whats-new/2026/11/amazon-eks-auto-mode-karpenter-dra/)
+- [Learn about Amazon EKS Auto Mode Managed instances](https://docs.aws.amazon.com/eks/latest/userguide/automode-learn-instances.html)
+- [Amazon EKS User Guide: Document history](https://docs.aws.amazon.com/eks/latest/userguide/doc-history.html)
+- [Trident release notes](https://docs.netapp.com/us-en/trident/trident-rn.html)
+- [Trident requirements](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html)
 - [コンテナ化への派生と FSx for ONTAP の連携可否(本リポジトリ)](atx-containerization-fsxn-derivation.md)
