@@ -216,7 +216,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 
 ## 9. 2026-10〜11 の EKS・コンテナ更新と本構成への影響
 
-**調査範囲**: 2026-11-10 に、EKS ユーザーガイドの Document history(2026-10-10 以降の項目)、AWS What's New 2 件(DRA、Gateway API)、各機能の公式ドキュメント、NetApp Trident 26.10 のリリースノートと要件ページを全文で読んだ。KubeCon North America 2026(11/9〜12)の発表は検索結果の要約しか見ておらず、本文は読んでいない [未測定]。この日は AWS SSO のトークンが失効していたため、EKS アドオンの版は再確認していない [未測定]。以下はすべて [文書] で、本リポジトリで動かしたものは無い。
+**調査範囲**: 2026-11-10 に、EKS ユーザーガイドの Document history(2026-10-10 以降の項目)、AWS What's New 2 件(DRA、Gateway API)、各機能の公式ドキュメント、NetApp Trident 26.10 のリリースノートと要件ページを全文で読んだ。KubeCon North America 2026(11/9〜12)の発表は検索結果の要約しか見ておらず、本文は読んでいない [未測定]。EKS アドオンの版は同日に ap-northeast-1 で確認した(9.3)。それ以外は [文書] で、本リポジトリで動かしたものは無い。
 
 Trident のドライバ選択(`ontap-nas` と `ontap-san`、Windows の SMB PV は Windows ノードのみ)は Hub の[コンテナデータストア選定](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/reference/decision-trees/container-datastore-selection.md)にある。同ページは Nitro Sandbox、Auto Mode、Trident 26.10 を扱っていないため、本章はその差分である。 <!-- spoke-checked: ontap-nas -->
 
@@ -256,7 +256,7 @@ DRA(Dynamic Resource Allocation)の対象は NVIDIA GPU と EFA で、ストレ�
 ### 9.3 Trident 26.10 と Kubernetes 1.37
 
 - EKS は Kubernetes 1.37 を 2026-10-01 に追加した(出典: [Document history](https://docs.aws.amazon.com/eks/latest/userguide/doc-history.html))。Trident 26.10 は Kubernetes 1.27〜1.37 に対応する(出典: [Trident requirements](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html))。テンプレートの `KubernetesVersion` のパターンは 1.37 を許容する。
-- 4.3 と V2 の実機確認で使った EKS アドオンの既定は v26.6.2-eksbuild.1 で、対応する Kubernetes は 1.36 まで(2026-10-29)だった [実測]。EKS アドオンが 26.10.x と 1.37 の組を提供しているかは、今回確認していない [未測定]。1.37 でクラスタを作る前に `aws eks describe-addon-versions --addon-name netapp_trident-operator --kubernetes-version 1.37` で確かめる。
+- 4.3 と V2 の実機確認で使った EKS アドオンの既定は v26.6.2-eksbuild.1 で、対応する Kubernetes は 1.36 まで(2026-10-29)だった [実測]。2026-11-10 の ap-northeast-1 で再確認すると、アドオンの最新は同じ v26.6.2-eksbuild.1(既定)で、対応は Kubernetes 1.36 までだった。26.10.x のアドオンはまだ無く、1.37 に対応する版も無い [実測: 1 回観測]。同じ日に EKS は 1.34〜1.37 が標準サポートだった。したがって、アドオンを使う構成 2 のテンプレートは、現時点では Kubernetes 1.36 以下を指定する。1.37 で Trident 26.10.1 を使うには、アドオンではなく Helm の trident-operator チャートで導入する経路になる。この Helm 導入の手順は兄弟リポジトリ blea-fsxn-usecase の[サンプル](https://github.com/Yoshiki0705/blea-fsxn-usecase/blob/main/usecases/blea-guest-fsxn-modernization-sample/doc/README_ja.md)に記載があるが、Trident 26.10.1 と Kubernetes 1.37 の組での実行記録は見つかっていない。本リポジトリでも試していない。 <!-- spoke-checked: helm -->
 - **Trident 26.10(26.10.1 より前)にはアップグレードしない。** リリースノートによると、起動時に node pod が使用中のボリュームを切り離し、Pod が `volume … is not staged` で失敗することがある。26.10.1 で修正された(出典: [Trident release notes](https://docs.netapp.com/us-en/trident/trident-rn.html))。アドオンの版を固定するときは 26.10.1 以降を選ぶ。
 - 本リポジトリの構成に関係する 26.10 の変更(リリースノートの記載で、本リポジトリでは動かしていない): `ontap-san` / `ontap-san-economy` で新規ボリュームの ONTAP オートサイズ、一部の iSCSI パスが使えない状態でのボリューム拡張、`enableConcurrency` 有効時に ONTAP-NAS のエクスポートポリシーのルールが誤って消える不具合の修正、PVC のアノテーション `trident.netapp.io/unixGroupID`(ルートスカッシュのある ONTAP-NAS ボリューム)。
 
