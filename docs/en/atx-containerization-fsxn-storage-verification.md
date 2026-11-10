@@ -216,7 +216,7 @@ If hands-on verification confirms feasibility, this set of artifacts (CloudForma
 
 ## 9. EKS and Container Updates, October–November 2026, and Their Effect on These Configurations
 
-**Scope of the survey**: on 2026-11-10 I read in full the EKS User Guide document history (entries from 2026-10-10 on), the two AWS What's New posts (DRA, Gateway API), the official documentation for each feature, and the NetApp Trident 26.10 release notes and requirements page. For KubeCon North America 2026 (Nov 9–12) I saw only search-result summaries, not the announcements themselves [Not measured]. I checked the EKS add-on versions the same day in ap-northeast-1 (9.3). Everything else below is [Documented]; nothing else here was run in this repository.
+**Scope of the survey**: on 2026-11-10 I read in full the EKS User Guide document history (entries from 2026-10-10 on), the two AWS What's New posts (DRA, Gateway API), the official documentation for each feature, and the NetApp Trident 26.10 release notes and requirements page. For KubeCon North America 2026 (Nov 9–12) I saw only search-result summaries, not the announcements themselves [Not measured]. The same day in ap-northeast-1 I checked the EKS add-on versions (9.3), Nitro Sandbox with Trident PVs (9.1), and Auto Mode with Trident (9.2) on real infrastructure. Everything else below is [Documented]; nothing else here was run in this repository.
 
 Trident driver choice (`ontap-nas` vs `ontap-san`, and the Windows-nodes-only SMB PV) is in the hub's [container data store selection](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/en/reference/decision-trees/container-datastore-selection.md). That page does not cover Nitro Sandbox, Auto Mode, or Trident 26.10, so this chapter is the delta. <!-- spoke-checked: ontap-nas -->
 
@@ -237,11 +237,20 @@ The documented storage options are (source: [Storage with Nitro Sandboxes](https
 - Amazon EFS CSI (add-on 3.5.0 or later): the NFS mount and TLS termination happen inside the sandbox.
 - CSI drivers backed by tmpfs (Secrets Store, cert-manager), plus `emptyDir` / ConfigMap / Secret.
 
-**NFS and iSCSI PVs from Trident (`csi.trident.netapp.io`) are not mentioned on that page.** It does not say they are unsupported either, so the documentation does not settle whether they work. I have not tried mounting a config 2 PV into a sandboxed pod [Not measured]. Three things to check if you try:
+**NFS and iSCSI PVs from Trident (`csi.trident.netapp.io`) are not mentioned on that page.** It does not say they are unsupported either, so the documentation does not settle whether they work. I tested it on real infrastructure.
 
-- Whether a device created by the host-side iSCSI session can be handed to the sandbox. The same page's considerations say host device passthrough is not supported, naming GPUs.
-- Unlike the EFS CSI driver, which mounts NFS inside the sandbox, Trident's node pod mounts on the host. Whether that result can be handed to the sandbox.
-- A pod with `sandbox.amazonaws.com/network-isolated: "true"` has no network device, and the page states that EFS is unavailable. I infer that network-reached FSx for ONTAP (NFS / iSCSI / S3 Access Points) is unreachable for the same reason, but I have not confirmed it.
+**Results** [Tested: 2026-11-10, ap-northeast-1, one observation per case]. On an EKS Auto Mode cluster (Kubernetes v1.36.4, Trident add-on v26.6.2-eksbuild.1), I mounted the same NFS PVC (RWX, 1 GiB, disposable SVM) into normal pods and into a pod with `runtimeClassName: isolated-sandbox`.
+
+| Case | Result |
+|---|---|
+| Two normal pods (on different nodes) mount the NFS PVC | Worked. A marker written by one was read by the other |
+| An isolated pod mounts the same NFS PVC | **Failed.** Container creation stopped with `failed to fulfil mount request: open …/volumes/kubernetes.io~csi/pvc-…/mount: no such file or directory`, ending in `CrashLoopBackOff` after 5 restarts in about 6 minutes. Provisioning and attach had succeeded |
+| Control: an isolated pod using only `emptyDir` | Worked. The kernel inside the pod was 6.18.54 against 6.18.56 on the normal node, so it runs on a separate kernel |
+| Control: an isolated pod mounts an Amazon EBS PVC (the Auto Mode EBS CSI) | Worked. Write and read-back succeeded |
+
+Isolated pods worked on the same cluster and node type (c8a.large), and an EBS PVC mounted. Only the Trident NFS PV failed. That matches the fact that the storage page does not list Trident. I did not isolate the cause (for example, NodePublish completing on the host while the mount path never reaches the sandbox is a guess); Trident's info-level log has no record of it. This is one observation; reproduction and behavior on other versions are unconfirmed.
+
+Whether an iSCSI PV can be handed to an isolated pod was not tested, because iSCSI itself was unavailable on the Auto Mode node (9.2). A pod with `sandbox.amazonaws.com/network-isolated: "true"` has no network device, and the page states that EFS is unavailable. I infer that network-reached FSx for ONTAP is unreachable for the same reason, but I did not test it.
 
 The S3 Access Points object API used by configs 3 and 4 is an SDK call over the network, so in principle a sandboxed pod can use it. Authentication needs care. In isolated mode the service account token is not replicated into the sandbox, and IMDS returns no credentials (only five placement paths respond). EKS Pod Identity credentials are allowed. I have not confirmed that config 4's IRSA (which uses the service account token) works in an isolated-mode pod; a Pod Identity design is the straightforward one on paper. As V3 notes, Pod Identity on Fargate is separately not measured.
 
@@ -251,7 +260,18 @@ The sandbox limitations (startup failure with `hostNetwork: true`, no `hostUsers
 
 DRA (Dynamic Resource Allocation) covers NVIDIA GPUs and EFA, not storage devices (source: [What's New](https://aws.amazon.com/about-aws/whats-new/2026/11/amazon-eks-auto-mode-karpenter-dra/)). How FSx for ONTAP PVs are provisioned and reached does not change. DRA in Auto Mode needs Kubernetes 1.36 or later; in Karpenter it applies to all versions.
 
-There is one indirect effect. For a GPU-backed AI workload that keeps shared data on FSx for ONTAP, Auto Mode managed nodes do not let you install software (AWS chooses the AMI, and there is no SSH), which conflicts with config 2's iSCSI node preparation (the launch template in 4.2) (source: [Learn about Amazon EKS Auto Mode Managed instances](https://docs.aws.amazon.com/eks/latest/userguide/automode-learn-instances.html)). So this repository's `PrepareNodesForIscsi` approach cannot be applied to Auto Mode nodes. Whether Trident NFS works on Auto Mode nodes, or whether those nodes include the iSCSI tools, was not stated in any document I read [Not measured]. Do not make a design depend on FSx for ONTAP from Auto Mode managed nodes until it is tested.
+There is one indirect effect. For a GPU-backed AI workload that keeps shared data on FSx for ONTAP, Auto Mode managed nodes do not let you install software (AWS chooses the AMI, and there is no SSH), which conflicts with config 2's iSCSI node preparation (the launch template in 4.2) (source: [Learn about Amazon EKS Auto Mode Managed instances](https://docs.aws.amazon.com/eks/latest/userguide/automode-learn-instances.html)). So this repository's `PrepareNodesForIscsi` approach cannot be applied to Auto Mode nodes. No document I read stated whether Trident works on Auto Mode, so I tested it on the same cluster as in 9.1.
+
+**Results** [Tested: 2026-11-10, ap-northeast-1, one observation per case. Kubernetes v1.36.4, nodes on Bottlerocket (EKS Auto, Standard) 2026.10.31, Trident add-on v26.6.2-eksbuild.1].
+
+| Case | Result |
+|---|---|
+| Installing the Trident add-on | With no nodes, pending pods made Auto Mode launch a node, and the node pod and controller reached Running. While the node started, the add-on showed `DEGRADED` (`InsufficientNumberOfReplicas`), which cleared once the node was up |
+| Backends (one NFS, one iSCSI) and PVC provisioning | Both `Success` / `Bound`. Provisioning is done by the controller and needs no tools on the node |
+| Mounting the NFS PV in a pod | **Worked.** Pods on two nodes shared a marker. On a new node it failed for tens of seconds with `CSINode … does not contain driver` until the Trident node pod registered, then succeeded |
+| Mounting the iSCSI PV in a pod | **Failed.** `unable to attach: open-iscsi tools not found on host`. `tridentctl get node` showed empty IQN and SERVICES, and the log said `Could not read initiatorname.iscsi; perhaps iSCSI is not installed?` |
+
+So on Auto Mode managed nodes an NFS PV works and an iSCSI PV does not. Because you cannot choose the AMI or install software on the node, config 2's `PrepareNodesForIscsi` approach cannot fill the gap. If you need iSCSI (block), use nodes whose AMI you control, such as a managed node group. This is one observation on Auto Mode and may change with a later AMI.
 
 ### 9.3 Trident 26.10 and Kubernetes 1.37
 

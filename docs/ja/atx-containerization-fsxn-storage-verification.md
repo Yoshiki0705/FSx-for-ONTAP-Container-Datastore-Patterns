@@ -216,7 +216,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 
 ## 9. 2026-10〜11 の EKS・コンテナ更新と本構成への影響
 
-**調査範囲**: 2026-11-10 に、EKS ユーザーガイドの Document history(2026-10-10 以降の項目)、AWS What's New 2 件(DRA、Gateway API)、各機能の公式ドキュメント、NetApp Trident 26.10 のリリースノートと要件ページを全文で読んだ。KubeCon North America 2026(11/9〜12)の発表は検索結果の要約しか見ておらず、本文は読んでいない [未測定]。EKS アドオンの版は同日に ap-northeast-1 で確認した(9.3)。それ以外は [文書] で、本リポジトリで動かしたものは無い。
+**調査範囲**: 2026-11-10 に、EKS ユーザーガイドの Document history(2026-10-10 以降の項目)、AWS What's New 2 件(DRA、Gateway API)、各機能の公式ドキュメント、NetApp Trident 26.10 のリリースノートと要件ページを全文で読んだ。KubeCon North America 2026(11/9〜12)の発表は検索結果の要約しか見ておらず、本文は読んでいない [未測定]。EKS アドオンの版(9.3)、Nitro Sandbox と Trident の PV(9.1)、Auto Mode と Trident(9.2)は同日に ap-northeast-1 で実機を確かめた。それ以外は [文書] で、本リポジトリで動かしたものは無い。
 
 Trident のドライバ選択(`ontap-nas` と `ontap-san`、Windows の SMB PV は Windows ノードのみ)は Hub の[コンテナデータストア選定](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/reference/decision-trees/container-datastore-selection.md)にある。同ページは Nitro Sandbox、Auto Mode、Trident 26.10 を扱っていないため、本章はその差分である。 <!-- spoke-checked: ontap-nas -->
 
@@ -237,11 +237,20 @@ Pod ごとに専用の Nitro Sandbox(Firecracker の microVM)で動かす機能�
 - Amazon EFS CSI(アドオン 3.5.0 以上): NFS のマウントと TLS の終端を Sandbox の内側で行う。
 - tmpfs を使う CSI ドライバ(Secrets Store、cert-manager)と、`emptyDir` / ConfigMap / Secret。
 
-**Trident(`csi.trident.netapp.io`)による NFS / iSCSI の PV は、このページに記載が無い。** 「サポートされない」とも書かれておらず、対応の有無は文書から判断できない。構成 2 の PV を Sandbox の Pod にマウントできるかは、実機でも試していない [未測定]。試す場合の観点は次の 3 つである。
+**Trident(`csi.trident.netapp.io`)による NFS / iSCSI の PV は、このページに記載が無い。** 「サポートされない」とも書かれておらず、対応の有無は文書から判断できなかったため、実機で確かめた。
 
-- ホスト側の iSCSI セッションが作るデバイスを Sandbox に渡せるか。同ページの考慮事項は、ホストデバイスの Sandbox への受け渡し(passthrough)を GPU について非対応と明記している。
-- NFS のマウントを Sandbox の内側で行う EFS CSI と異なり、Trident の node pod はホスト側でマウントする。その結果を Sandbox に渡せるか。
-- `sandbox.amazonaws.com/network-isolated: "true"` の Pod はネットワークデバイスを持たず、EFS は使えないと明記されている。同じ理由でネットワーク経由の FSx for ONTAP(NFS / iSCSI / S3 Access Points)も届かないと推測するが、確認していない。
+**実機の結果** [実測: 2026-11-10、ap-northeast-1、各ケース 1 回の観測]。EKS Auto Mode のクラスタ(Kubernetes v1.36.4、Trident アドオン v26.6.2-eksbuild.1)で、同じ NFS の PVC(RWX、1 GiB、使い捨て SVM)を通常の Pod と `runtimeClassName: isolated-sandbox` の Pod にマウントした。
+
+| ケース | 結果 |
+|---|---|
+| 通常の Pod 2 本(別ノード)が NFS の PVC をマウント | 成立。片方が書いたマーカーをもう片方が読めた |
+| 隔離 Pod が同じ NFS の PVC をマウント | **失敗**。コンテナの作成が `failed to fulfil mount request: open …/volumes/kubernetes.io~csi/pvc-…/mount: no such file or directory` で止まり、約 6 分の間に再起動 5 回で `CrashLoopBackOff`。PVC の払い出しと Attach は成功していた |
+| 対照: 隔離 Pod が `emptyDir` だけを使う | 成立。Pod 内のカーネルは 6.18.54、通常ノードは 6.18.56 で、別のカーネルで動いている |
+| 対照: 隔離 Pod が Amazon EBS の PVC(Auto Mode の EBS CSI)をマウント | 成立。書き込みと読み戻しができた |
+
+隔離 Pod は同じクラスタ、同じノード種別(c8a.large)で成立しており、EBS の PVC も使えた。失敗したのは Trident の NFS の PV だけである。この結果は、同ページがストレージとして挙げた方式に Trident が含まれないことと整合する。失敗の原因そのもの(NodePublish がホスト側で完了しているのに Sandbox にマウント先が引き渡されない、といった推測)は、Trident の info レベルのログに記録が無く、切り分けていない。1 回の観測で、再現と別バージョンでの挙動は未確認である。
+
+iSCSI の PV を隔離 Pod に渡せるかは、Auto Mode のノードで iSCSI 自体が使えなかったため(9.2)、確かめられていない。`sandbox.amazonaws.com/network-isolated: "true"` の Pod はネットワークデバイスを持たず、EFS は使えないと明記されている。同じ理由でネットワーク経由の FSx for ONTAP にも到達できないと推測するが、これは試していない。
 
 構成 3・4 で使う S3 Access Points のオブジェクト API は、ネットワーク経由の SDK 呼び出しなので、Sandbox の Pod からも原理的には使える。ただし認証は注意が要る。隔離モードではサービスアカウントのトークンが Sandbox に複製されず、IMDS からは認証情報を取れない(配置情報の 5 パスのみ応答する)。一方で EKS Pod Identity の認証情報は許可されている。構成 4 の IRSA(サービスアカウントのトークンを使う)が隔離モードの Pod で動くかは確認しておらず、Pod Identity を使う設計が文書上は素直である。なお V3 のとおり、Pod Identity の Fargate 対応は別途未測定である。
 
@@ -251,7 +260,18 @@ Sandbox に制約が多い項目(`hostNetwork: true` で起動失敗、`hostUser
 
 DRA(Dynamic Resource Allocation)の対象は NVIDIA GPU と EFA で、ストレージのデバイスは対象外である(出典: [What's New](https://aws.amazon.com/about-aws/whats-new/2026/11/amazon-eks-auto-mode-karpenter-dra/))。FSx for ONTAP の PV の払い出しや到達経路は変わらない。Auto Mode の DRA は Kubernetes 1.36 以上、Karpenter は全バージョンが対象である。
 
-間接的な影響は 1 点ある。GPU を使う AI ワークロードが共有データを FSx for ONTAP に置く構成では、Auto Mode の管理ノードにソフトウェアを導入できない(AMI は AWS が決め、SSH もできない)ことが、構成 2 の iSCSI 用ノード準備(4.2 の launch template)と衝突する(出典: [Learn about Amazon EKS Auto Mode Managed instances](https://docs.aws.amazon.com/eks/latest/userguide/automode-learn-instances.html))。このため、本リポジトリの `PrepareNodesForIscsi` の方式は Auto Mode のノードには適用できない。Auto Mode で Trident の NFS が動くか、iSCSI 用ツールを含むかは、読んだ文書のどれにも見つからなかった [未測定]。Auto Mode の管理ノードで FSx for ONTAP を使う設計は、実機で確かめるまで前提に置かない。
+間接的な影響は 1 点ある。GPU を使う AI ワークロードが共有データを FSx for ONTAP に置く構成では、Auto Mode の管理ノードにソフトウェアを導入できない(AMI は AWS が決め、SSH もできない)ことが、構成 2 の iSCSI 用ノード準備(4.2 の launch template)と衝突する(出典: [Learn about Amazon EKS Auto Mode Managed instances](https://docs.aws.amazon.com/eks/latest/userguide/automode-learn-instances.html))。このため、本リポジトリの `PrepareNodesForIscsi` の方式は Auto Mode のノードには適用できない。文書には Auto Mode での Trident の可否が見つからなかったため、9.1 と同じクラスタで実機を確かめた。
+
+**実機の結果** [実測: 2026-11-10、ap-northeast-1、各ケース 1 回の観測。Kubernetes v1.36.4、ノードは Bottlerocket(EKS Auto, Standard)2026.10.31、Trident アドオン v26.6.2-eksbuild.1]。
+
+| ケース | 結果 |
+|---|---|
+| Trident アドオンの導入 | ノードが無い状態から、Pod の保留をきっかけに Auto Mode がノードを起動し、node pod とコントローラが Running になった。起動中はアドオンが `DEGRADED`(`InsufficientNumberOfReplicas`)と表示され、ノードの起動後に解消した |
+| バックエンド(NFS と iSCSI の 2 本)と PVC の払い出し | どちらも `Success` / `Bound`。払い出しはコントローラ側の処理で、ノードのツールは要らない |
+| NFS の PV を Pod にマウント | **成立**。ノード 2 台にまたがる Pod 間で書いたマーカーを読めた。新しいノードでは Trident の node pod が登録されるまで `CSINode … does not contain driver` で数十秒失敗してから成功した |
+| iSCSI の PV を Pod にマウント | **失敗**。`unable to attach: open-iscsi tools not found on host`。`tridentctl get node` の IQN と SERVICES が空で、ログは `Could not read initiatorname.iscsi; perhaps iSCSI is not installed?` |
+
+したがって、Auto Mode の管理ノードでは NFS の PV は使え、iSCSI の PV は使えない。AMI を選べず、ノードにソフトウェアを導入できないため、構成 2 の `PrepareNodesForIscsi` の方式で補うこともできない。iSCSI(ブロック)が要る場合は、managed node group など AMI を制御できるノードを使う。Auto Mode でのこの結果は 1 回の観測で、将来の AMI 更新で変わりうる。
 
 ### 9.3 Trident 26.10 と Kubernetes 1.37
 
