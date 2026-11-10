@@ -195,7 +195,7 @@ Because access is via the S3 SDK, the app must be written for object access. It 
 
 So specifying a user other than `root` narrowed reads and writes by the file mode bits, a layer separate from the access point policy.
 
-One snag was on the ONTAP side. A `chown 1001` from an NFSv4.1 client left the owner as `nobody` (65534). After creating a user with the same UID and name (`s3ap_app`) on the client and running `chown s3ap_app` by name, the owner became 1001. The SVM's NFS ID domain matched the client's `ap-northeast-1.compute.internal`; it was changed to another value once and set back. I could not find an NFSv4 numeric IDs setting in this REST API version.
+One snag was on the ONTAP side. A `chown 1001` from an NFSv4.1 client left the owner as `nobody` (65534). After creating a user with the same UID and name (`s3ap_app`) on the client and running `chown s3ap_app` by name, the owner became 1001. The SVM's NFS ID domain matched the client's default (the VPC's internal DNS domain); it was changed to another value once and set back. I could not find an NFSv4 numeric IDs setting in this REST API version.
 
 **Config 4 (EKS Fargate, Kubernetes 1.35)**
 
