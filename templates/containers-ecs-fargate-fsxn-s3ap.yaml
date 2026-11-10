@@ -218,7 +218,12 @@ Resources:
                 - s3:GetObject
                 - s3:PutObject
                 - s3:ListBucket
-              Resource: '*'
+              # The access point policy rejects Resource '*'; it must name this
+              # access point. Built from the literal name, not GetAtt, so the
+              # policy does not depend on the access point it belongs to.
+              Resource:
+                - !Sub 'arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/fsxn-ecs-fargate-ap'
+                - !Sub 'arn:${AWS::Partition}:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/fsxn-ecs-fargate-ap/object/*'
 
   # ---------- ECS cluster + Fargate service ----------
   EcsCluster:
