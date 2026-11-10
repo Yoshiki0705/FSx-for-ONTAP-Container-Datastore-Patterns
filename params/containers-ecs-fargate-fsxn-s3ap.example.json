@@ -25,7 +25,7 @@
   },
   {
     "ParameterKey": "FileSystemUnixUser",
-    "ParameterValue": "ec2-user"
+    "ParameterValue": "REPLACE_WITH_SVM_RESOLVABLE_UNIX_USER"
   },
   {
     "ParameterKey": "ContainerImage",
