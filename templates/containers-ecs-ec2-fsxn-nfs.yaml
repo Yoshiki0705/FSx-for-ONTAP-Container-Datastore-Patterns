@@ -50,6 +50,7 @@ Metadata:
           - InstanceType
           - DesiredCapacity
           - ContainerImage
+          - ContainerCommand
 
 Parameters:
   CreateNetwork:
@@ -133,8 +134,18 @@ Parameters:
       Placeholder container image. Replace with the image AWS Transform
       containerization published to Amazon ECR.
 
+  ContainerCommand:
+    Type: String
+    Default: 'sleep infinity'
+    Description: >
+      Space-separated command for the container. The default keeps the placeholder
+      image running: without it the amazonlinux image exits at once, the service
+      never reaches a steady state, and stack creation waits on the service. Set
+      to an empty string to use your own image's CMD / ENTRYPOINT.
+
 Conditions:
   DoCreateNetwork: !Equals [!Ref CreateNetwork, 'true']
+  HasContainerCommand: !Not [!Equals [!Ref ContainerCommand, '']]
 
 Resources:
 
@@ -317,6 +328,7 @@ Resources:
         - Name: app
           Image: !Ref ContainerImage
           Essential: true
+          Command: !If [HasContainerCommand, !Split [' ', !Ref ContainerCommand], !Ref 'AWS::NoValue']
           MountPoints:
             - ContainerPath: /data
               SourceVolume: fsxontap-volume
