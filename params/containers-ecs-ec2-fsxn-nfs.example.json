@@ -38,5 +38,9 @@
   {
     "ParameterKey": "ContainerImage",
     "ParameterValue": "111122223333.dkr.ecr.ap-northeast-1.amazonaws.com/awstransform-app:latest"
+  },
+  {
+    "ParameterKey": "ContainerCommand",
+    "ParameterValue": ""
   }
 ]

@@ -3,7 +3,7 @@
 **Purpose**: Determine from primary sources the feasibility of four ways to use Amazon FSx for NetApp ONTAP as a data area on container runtimes after AWS Transform containerization (ECS on EC2 / EKS on EC2 / ECS on Fargate / EKS on Fargate), and express the feasible ones as CloudFormation templates taken through static verification.
 
 **Last Updated**: 2026-10-29
-**Status**: Literature research + CloudFormation authoring + static verification (cfn-lint) + a small-scale hands-on deployment of config 2 (4.3). No hands-on deployment of configs 1, 3, and 4 (next stage)
+**Status**: Literature research + CloudFormation authoring + static verification (cfn-lint) + small-scale hands-on deployments of configs 1 and 2 (3.3 and 4.3). No hands-on deployment of configs 3 and 4 (next stage)
 
 Related: [Containerization (ECS / EKS) Derivation and FSx for ONTAP Integration](atx-containerization-fsxn-derivation.md). This memo follows that research to express "if it can be used, how to configure it" in CloudFormation.
 
@@ -15,7 +15,7 @@ All four configurations can use FSx for ONTAP as a data area. But **the access f
 
 | # | Runtime | FSx for ONTAP access form | App change | CloudFormation | Tier |
 |---|---|---|---|---|---|
-| 1 | ECS on EC2 | NFS mounted on the EC2 host → bind mount | None (keeps file I/O) | [Authored](../../templates/containers-ecs-ec2-fsxn-nfs.yaml) | [Documented] |
+| 1 | ECS on EC2 | NFS mounted on the EC2 host → bind mount | None (keeps file I/O) | [Authored](../../templates/containers-ecs-ec2-fsxn-nfs.yaml) | [Documented]・[Tested] (3.3) |
 | 2 | EKS on EC2 | Trident CSI PV (NFS `ontap-nas` / iSCSI `ontap-san`) | None (keeps file I/O) | [Authored](../../templates/containers-eks-ec2-fsxn-trident.yaml) | [Documented] · [Tested] (4.3) |
 | 3 | ECS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-ecs-fargate-fsxn-s3ap.yaml) | [Documented] |
 | 4 | EKS on Fargate | S3 object API via S3 Access Points | Required (to S3 SDK) | [Authored](../../templates/containers-eks-fargate-fsxn-s3ap.yaml) | [Documented] |
@@ -32,7 +32,7 @@ All four configurations can use FSx for ONTAP as a data area. But **the access f
 | **[Documented]** | Stated in AWS / NetApp docs, not verified in a real environment. Source URL included |
 | **[Not measured]** | Not executed, or out of scope here. Investigation date and scope included |
 
-The CloudFormation in this memo passes static verification (cfn-lint) as [Tested]. Only config 2 was deployed and checked, at small scale (4.3). **Configs 1, 3, and 4 have not been verified to deploy and work** [Not measured].
+The CloudFormation in this memo passes static verification (cfn-lint) as [Tested]. Configs 1 (3.3) and 2 (4.3) were deployed and checked at small scale. **Configs 3 and 4 have not been verified to deploy and work** [Not measured].
 
 ---
 
@@ -50,6 +50,22 @@ The procedure for using FSx for ONTAP from ECS is documented assuming the EC2 la
 - An NFS (2049) ingress from the ECS instances is added to the existing FSx for ONTAP security group.
 
 **Note**: the mount is an instance bootstrap action, not something the task creates. If a task starts before the mount, the bind-mount target is empty. Treat the mount as a launch prerequisite.
+
+### 3.3 Hands-on results for config 1
+
+**Scope**: 2026-11-10, ap-northeast-1, a disposable SVM and volume (UNIX style, 1 GiB, junction path `/ecsvol`) created on the existing Single-AZ FSx for ONTAP, one observation per item, stack lifetime about 25 minutes. The template was the origin/main version at 09c079b, unmodified. This is a small-scale check; it does not cover performance, Multi-AZ failover, consistency when several tasks write the same file at once, or Windows (SMB, config 1b).
+
+| Item | Result [Tested] |
+|---|---|
+| Creating the stack | The ECS service never reached a steady state, so the stack did not reach `CREATE_COMPLETE` on its own. The cause was not the mount: the placeholder image (`amazonlinux`) exits at once (exit 0) without arguments, and the service kept restarting the task. Setting the service's desired count to 0 let the stack finish. I added a `ContainerCommand` parameter to the template (default `sleep infinity`; an empty string uses your own image's CMD). That change passed cfn-lint only and was not deployed |
+| Host mount (two instances) | `/mnt/fsxontap` was mounted over NFS v4.1 on both. The ingress was 2049 only (111 and the others were not opened) |
+| Sharing between tasks on different instances | A marker written to `/data` by a task on instance 1 was read, identical, by a task on instance 2 |
+| Replacing the task | After stopping the writing task, a new task read the same marker |
+| Replacing the instance | After terminating instance 1, a task placed on the instance that Auto Scaling launched found the mount in place from boot and read the same marker |
+
+I wrote and read the marker with `start-task` command overrides (`sh -c`) on the unchanged task definition and read the output in CloudWatch Logs. I did not use ECS Exec (the template has no task role). After teardown, the SVMs, volumes, backups, the FSx security group ingress, and the network interface count (72) matched the baseline.
+
+**Limits of the observation**: the NFS export policy was left at the default of a new FSx for ONTAP SVM. A design that restricts it to client CIDRs was not tested.
 
 ---
 
@@ -163,11 +179,11 @@ Because access is via the S3 SDK, the app must be written for object access. It 
 
 Confirmed that `make cfn-lint` (cfn-lint, `templates/*.yaml`) passes with exit 0, covering the four templates plus the two existing ones. A `params/*.example.json` with dummy values was prepared for each template, and the keys were confirmed to match the template parameters (the new-network CIDR parameters in Config 1 have defaults and are omitted when referencing existing resources).
 
-**What this verification does not say**: configs other than 2 have not been verified to deploy and work. The config 2 results are in 4.3. The following are the items to confirm on real infrastructure; V1 and V2 are already confirmed for config 2.
+**What this verification does not say**: configs 3 and 4 have not been verified to deploy and work. The config 1 results are in 3.3 and the config 2 results in 4.3. The following are the items to confirm on real infrastructure; V1 is already confirmed for configs 1 and 2, and V2 for config 2.
 
 | # | Item | Research / verification state (2026-09-22) |
 |---|---|---|
-| V1 | Deploying the four configurations and data connectivity | Config 2 was checked on 2026-10-29 (4.3) [Tested]. Configs 1, 3, and 4 are not done; only cfn-lint is [Tested] |
+| V1 | Deploying the four configurations and data connectivity | Config 2 was checked on 2026-10-29 (4.3) and config 1 on 2026-11-10 (3.3) [Tested]. Configs 3 and 4 are not done; only cfn-lint is [Tested] |
 | V2 | Current Trident EKS add-on name and version | On 2026-10-29 in ap-northeast-1, `netapp_trident-operator` existed, the default was v26.6.2-eksbuild.1, and the highest supported Kubernetes version was 1.36 [Tested]. Names and versions change, so reconfirm before deploying. Trident 26.10 and Kubernetes 1.37 are in 9.3 |
 | V3 | Whether EKS Pod Identity works on Fargate | This memo uses IRSA. Pod Identity on Fargate is unconfirmed [Not measured] |
 | V4 | Mapping of the S3 access point UNIX user to ONTAP-side permissions | Permission design to confirm on real hardware [Not measured] |
@@ -181,7 +197,7 @@ Before confirming V1–V5 on real infrastructure, these are the prerequisites, o
 
 **Confirmed design decisions (do not undo on real infra)**:
 
-- Config 1's template explicitly sets `nfsvers=4.1` for the NFS mount [Tested]. That NFSv4.1 completes over the single port 2049, and that 111 / 635 / 4045-4049 are for NFSv3 and are not needed for v4.1-only, is stated in AWS documentation and is not verified as ingress connectivity in this repository [Documented] (source: [Use NFS to mount FSx for ONTAP volume on Linux instance](https://repost.aws/knowledge-center/ec2-mount-fsx-ontap-nfs)). So designing the template ingress as 2049-only is consistent on the v4.1 assumption.
+- Config 1's template explicitly sets `nfsvers=4.1` for the NFS mount [Tested]. That NFSv4.1 completes over the single port 2049, and that 111 / 635 / 4045-4049 are for NFSv3 and are not needed for v4.1-only, is stated in AWS documentation [Documented] (source: [Use NFS to mount FSx for ONTAP volume on Linux instance](https://repost.aws/knowledge-center/ec2-mount-fsx-ontap-nfs)). In this repository on 2026-11-10, the NFS v4.1 mount and reads and writes worked with the ingress left at 2049 only [Tested] (3.3, one observation).
 - The S3 Access Point policy circular reference is already avoided by setting the Principal to the account root and scoping on the role's identity policy (5.2).
 
 **Items to confirm before starting (mapped to the V numbers)**:
