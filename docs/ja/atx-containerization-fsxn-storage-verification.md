@@ -3,7 +3,7 @@
 **目的**: AWS Transform でコンテナ化した後の実行環境(ECS on EC2 / EKS on EC2 / ECS on Fargate / EKS on Fargate)で、Amazon FSx for NetApp ONTAP をデータ領域として使う 4 構成の実現性を一次情報で確定し、実現するものは CloudFormation テンプレート化して静的検証まで行う。
 
 **最終更新**: 2026-10-29
-**ステータス**: 文献調査 + CloudFormation 作成 + 静的検証(cfn-lint)+ 構成 2 の実機デプロイ(小規模、4.3)。構成 1・3・4 の実機デプロイは未実施(次段階)
+**ステータス**: 文献調査 + CloudFormation 作成 + 静的検証(cfn-lint)+ 構成 1・2 の実機デプロイ(小規模、3.3 と 4.3)。構成 3・4 の実機デプロイは未実施(次段階)
 
 関連: [コンテナ化(ECS/EKS)への派生と FSx for ONTAP の連携可否](atx-containerization-fsxn-derivation.md)。本メモはその調査を受けて「使えるなら、どう構成するか」を CloudFormation に落とす。
 
@@ -15,7 +15,7 @@
 
 | # | 実行環境 | FSx for ONTAP の到達形態 | アプリ改修 | CloudFormation | 区分 |
 |---|---|---|---|---|---|
-| 1 | ECS on EC2 | NFS を EC2 ホストにマウント → bind mount | 不要(ファイル I/O のまま) | [作成済み](../../templates/containers-ecs-ec2-fsxn-nfs.yaml) | [文書] |
+| 1 | ECS on EC2 | NFS を EC2 ホストにマウント → bind mount | 不要(ファイル I/O のまま) | [作成済み](../../templates/containers-ecs-ec2-fsxn-nfs.yaml) | [文書]・[実測](3.3) |
 | 2 | EKS on EC2 | Trident CSI の PV(NFS `ontap-nas` / iSCSI `ontap-san`) | 不要(ファイル I/O のまま) | [作成済み](../../templates/containers-eks-ec2-fsxn-trident.yaml) | [文書]・[実測](4.3) |
 | 3 | ECS on Fargate | S3 Access Points 経由の S3 オブジェクト API | 必要(S3 SDK へ) | [作成済み](../../templates/containers-ecs-fargate-fsxn-s3ap.yaml) | [文書] |
 | 4 | EKS on Fargate | S3 Access Points 経由の S3 オブジェクト API | 必要(S3 SDK へ) | [作成済み](../../templates/containers-eks-fargate-fsxn-s3ap.yaml) | [文書] |
@@ -32,7 +32,7 @@
 | **[文書]** | AWS / NetApp のドキュメント上の記載、実機では未確認。出典 URL を併記 |
 | **[未測定]** | 実行していない、またはこの範囲では扱っていない。調査日と調査範囲を併記 |
 
-本メモの CloudFormation は静的検証(cfn-lint)まで [実測] で通している。デプロイして動作することは、構成 2 についてのみ小規模に確認した(4.3)。**構成 1・3・4 は、デプロイして動作することを検証していない** [未測定]。
+本メモの CloudFormation は静的検証(cfn-lint)まで [実測] で通している。デプロイして動作することは、構成 1(3.3)と構成 2(4.3)について小規模に確認した。**構成 3・4 は、デプロイして動作することを検証していない** [未測定]。
 
 ---
 
@@ -50,6 +50,22 @@ ECS から FSx for ONTAP を使う手順は EC2 起動タイプ前提で文書�
 - FSx for ONTAP の既存セキュリティグループへ、ECS インスタンスからの NFS(2049)ingress を追加する。
 
 **注意**: マウントはインスタンスの起動時処理であり、タスクが作るものではない。マウント前にタスクが起動すると bind mount 先が空になる。マウントは起動の前提条件として扱う。
+
+### 3.3 構成 1 の実機確認結果
+
+**範囲**: 2026-11-10、ap-northeast-1、既存の Single-AZ の FSx for ONTAP 上に作った使い捨ての SVM とボリューム(UNIX スタイル、1 GiB、ジャンクションパス `/ecsvol`)、各項目 1 回の観測、スタックの存続は約 25 分。テンプレートは origin/main の 09c079b のものを無改造で使った。小規模の確認であり、性能、Multi-AZ のフェイルオーバー、複数タスクが同じファイルへ同時に書くときの整合、Windows(SMB、構成 1b)は含まない。
+
+| 項目 | 結果 [実測] |
+|---|---|
+| スタックの作成 | ECS サービスが定常状態に達せず、そのままでは `CREATE_COMPLETE` にならなかった。原因はマウントではなく、プレースホルダのイメージ(`amazonlinux`)が引数なしで即座に終了(exit 0)し、サービスがタスクを起動し直し続けたこと。サービスの希望数を 0 にするとスタックが完了した。テンプレートには `ContainerCommand` パラメータ(既定 `sleep infinity`、空文字で自前イメージの CMD を使う)を足した。この変更は cfn-lint のみで、デプロイして確かめていない |
+| ホストのマウント(インスタンス 2 台) | 両方で `/mnt/fsxontap` が NFS v4.1 でマウントされていた。ingress は 2049 のみ(111 などは開けていない) |
+| 別インスタンスのタスク間の共有 | インスタンス 1 のタスクが `/data` に書いたマーカーを、インスタンス 2 のタスクが読めて一致した |
+| タスクの入れ替え | 書き込んだタスクを停止し、新しいタスクを起動して読むと一致した |
+| インスタンスの置き換え | インスタンス 1 を終了し、Auto Scaling が起動した新しいインスタンスにタスクを置くと、起動時のマウントが成立し、マーカーが一致した |
+
+確認には、タスク定義はそのままに `start-task` のコマンド上書き(`sh -c`)でマーカーを書き読みし、CloudWatch Logs で出力を読んだ。ECS Exec は使っていない(テンプレートにタスクロールが無い)。撤去後は、SVM、ボリューム、バックアップ、FSx のセキュリティグループの ingress、ネットワークインターフェイス数(72)がベースラインと一致した。
+
+**観測の範囲**: NFS の export policy は、FSx for ONTAP の新しい SVM の既定のまま変更しなかった。クライアントの CIDR を絞る設計は確かめていない。
 
 ---
 
@@ -163,11 +179,11 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 
 `make cfn-lint`(cfn-lint、`templates/*.yaml`)が exit 0 で通ることを確認した。4 テンプレートと既存 2 テンプレートを含む。各テンプレートに対応する `params/*.example.json` をダミー値で用意し、キーがテンプレートのパラメータと一致することを確認した(構成 1 の新規ネットワーク用 CIDR パラメータは既定値を持ち、既存参照時は省略されるため未記載)。
 
-**この検証が言っていない範囲**: 構成 2 以外は、デプロイして動作することを検証していない。構成 2 の結果は 4.3 にある。以下は実機検証で確認する項目で、V1 と V2 は構成 2 の分を確認済みである。
+**この検証が言っていない範囲**: 構成 3・4 は、デプロイして動作することを検証していない。構成 1 の結果は 3.3、構成 2 の結果は 4.3 にある。以下は実機検証で確認する項目で、V1 は構成 1・2 の分、V2 は構成 2 の分を確認済みである。
 
 | # | 項目 | 調査 / 検証の状態(2026-09-22) |
 |---|---|---|
-| V1 | 4 構成のデプロイとデータ疎通 | 構成 2 は 2026-10-29 に確認(4.3)[実測]。構成 1・3・4 は未実施で、cfn-lint のみ [実測] |
+| V1 | 4 構成のデプロイとデータ疎通 | 構成 2 は 2026-10-29(4.3)、構成 1 は 2026-11-10(3.3)に確認 [実測]。構成 3・4 は未実施で、cfn-lint のみ [実測] |
 | V2 | Trident EKS アドオンの現行名・バージョン | 2026-10-29 の ap-northeast-1 で `netapp_trident-operator` が存在し、既定は v26.6.2-eksbuild.1、対応する Kubernetes は 1.36 まで [実測]。名称と版は変わりうるため、デプロイ前に再確認する。Trident 26.10 と Kubernetes 1.37 は 9.3 |
 | V3 | EKS Pod Identity の Fargate 対応可否 | 本メモは IRSA を採用。Pod Identity の Fargate 対応は未確認 [未測定] |
 | V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | 実機で権限設計を確認する必要あり [未測定] |
@@ -181,7 +197,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 
 **確認済みの設計判断(実機で崩さない)**:
 
-- 構成 1 のテンプレートは NFS マウントに `nfsvers=4.1` を明示している [実測]。NFSv4.1 が 2049 単一ポートで完結し、111 / 635 / 4045-4049 は NFSv3 用で v4.1 のみなら不要であることは AWS ドキュメントの記載であり、本リポジトリでの ingress 疎通としては未検証 [文書](出典: [Use NFS to mount FSx for ONTAP volume on Linux instance](https://repost.aws/knowledge-center/ec2-mount-fsx-ontap-nfs))。したがってテンプレートの ingress を 2049 のみとする設計は v4.1 前提では整合する。
+- 構成 1 のテンプレートは NFS マウントに `nfsvers=4.1` を明示している [実測]。NFSv4.1 が 2049 単一ポートで完結し、111 / 635 / 4045-4049 は NFSv3 用で v4.1 のみなら不要であることは AWS ドキュメントの記載である [文書](出典: [Use NFS to mount FSx for ONTAP volume on Linux instance](https://repost.aws/knowledge-center/ec2-mount-fsx-ontap-nfs))。本リポジトリでは 2026-11-10 に、ingress を 2049 のみにしたまま NFS v4.1 のマウントと読み書きが成立した [実測](3.3、1 回観測)。
 - S3 Access Point ポリシーの循環は、Principal をアカウントルートにしロール側 identity policy で絞ることで回避済み(5.2)。
 
 **着手前に確認する項目(V 番号に対応)**:
