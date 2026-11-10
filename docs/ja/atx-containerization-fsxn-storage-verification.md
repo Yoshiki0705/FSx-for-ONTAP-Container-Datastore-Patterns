@@ -144,11 +144,14 @@ FSx for ONTAP の S3 Access Points は、ボリュームのデータを S3 オ�
 
 - FSx for ONTAP の S3 Access Point は CloudFormation リソース `AWS::FSx::S3AccessPointAttachment` で作成できる(CLI 専用ではない)。ネットワーク origin を VPC にし、ファイルアクセスを認可する UNIX ユーザーを指定する。
 - in-VPC からの S3 トラフィックは無料の S3 Gateway VPC エンドポイントを通す。これが `aws:SourceVpc` を付与し、VPC origin のアクセスポイントが要求を受け入れる。
+- VPC に S3 Gateway エンドポイントが既にあり、タスク / Pod のサブネットのルートテーブルを覆っている場合は、`CreateS3GatewayEndpoint=false` で再利用する。同一サービスへのエンドポイントルートは 1 つのルートテーブルに 1 つしか持てないため、重ねて作ると失敗する [文書]([Gateway endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/vpce-gateway.html))。作成が実際に失敗することは確認していない [未測定]。
+- 構成 4 は、Fargate のみのクラスタで CoreDNS が動くように、`kube-system` + `k8s-app=kube-dns` に一致する Fargate profile と、`computeType=Fargate` の coredns add-on を作る。CoreDNS は既定で EC2 前提のため、これが無いと Pod は名前解決できず、S3 SDK が動かない [文書]([Get started with AWS Fargate](https://docs.aws.amazon.com/eks/latest/userguide/fargate-getting-started.html))。`computeType` は coredns add-on の設定項目として実在する [実測: 2026-11-10、`describe-addon-configuration`]。デプロイして動くことは未確認 [未測定]。<!-- spoke-checked: computetype --> <!-- spoke-checked: pods -->
+- `FileSystemIdentity`(UNIX ユーザー)は、SVM が名前解決できるユーザーでなければならない。Hub の実測は、SVM のローカル(`files`)に作ったユーザーで Access Point が AVAILABLE になり読み書きできたこと、非 root の `nobody` を固定すると root 所有・755 のボリュームで書き込みが拒否されたことを記録している [文書]([Hub: Access Point の認可の層(日本語)](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/security-governance/notes/access-point-authorization-layers.md)、実測日 2026-08-17 / 18)。テンプレート既定の `ec2-user` が新しい SVM で解決できないことは、本リポジトリではまだ観測していない [未測定]。この FS の既存の UNIX Access Point 2 本は `root` で AVAILABLE [実測: 2026-11-10]。root は全ファイルを認可するため推奨構成ではなく、検証では測定条件として記録する。`FileSystemIdentity` は作成後に変更できない。
 - 認証はコンテナ側の IAM ロール。構成 3(ECS Fargate)はタスクロール、構成 4(EKS Fargate)は IRSA(OIDC プロバイダ + IAM ロール + サービスアカウントの注釈)。
 
 **アクセスポイントポリシーの循環回避**: タスク / IRSA ロールがアクセスポイント ARN を参照し、アクセスポイントポリシーがそのロール ARN を参照すると循環する。同一アカウントでは identity policy とアクセスポイントポリシーのどちらかが許可すれば成立するため、アクセスポイントポリシーの Principal をアカウントルートにし、ロール側の identity policy でアクセスポイントを絞った。VPC origin が VPC 外の要求を deny する。
 
-**IRSA の trust condition(構成 4)**: `<OIDC発行者>:sub` という condition キーは、発行者ホストがクラスタ作成後にしか判明せず、CloudFormation は intrinsic function で condition の**キー**を作れない。そのためテンプレートは Federated principal のみを付与し、`sub` / `aud` のスコープはデプロイ後に trust policy へ手で追加する。共用アカウントでスコープ未設定のまま放置しないこと。
+**IRSA の trust condition(構成 4)**: condition のキー `<OIDC発行者>:aud` と `:sub` には発行者ホストが入り、CloudFormation は map の**キー**に intrinsic function を置けない。そこでテンプレートは trust policy を `Fn::Sub` で包んだ JSON 文書にし、発行者 URL から `https://` を除いたホストを変数として渡す。ロールは作成時から `aud` と、名前空間 + サービスアカウントの `sub` に絞られ、デプロイ後に手で足す作業は無い。この書き方には AWS re:Post に動作例がある [文書]([StringEquals with Sub in both key and value](https://repost.aws/questions/QUyqQ4VGzLRqKDZgI-RloR2A/cloudformation-stringequals-with-sub-in-both-key-and-value))。構文は cfn-lint を通るが、デプロイは未実施で、絞りが効くこと(別のサービスアカウントの Pod が拒否されること)は未確認 [未測定]。EKS Pod Identity は Fargate の Pod に使えないため、構成 4 は IRSA を使う [文書]。<!-- spoke-checked: pods -->
 
 ### 5.3 オブジェクト API の制約 [文書]
 
@@ -171,7 +174,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 | アプリ改修 | 不要 | 不要 | 必要(S3 SDK) | 必要(S3 SDK) |
 | 認証 | ホスト経由(IAM 不要) | Secrets Manager / 証明書(Trident) | タスクロール(IAM) | IRSA(IAM) |
 | 主なユースケース | 既存ファイル前提の移行 | ステートフル / DB / 共有ファイル | 分析・AI 連携・オブジェクト前提 | 同左 |
-| CloudFormation スコープ外 | なし(全部 CFn) | PV 系オブジェクト(kubectl) | なし(全部 CFn) | サービスアカウント注釈 / trust の sub |
+| CloudFormation スコープ外 | なし(全部 CFn) | PV 系オブジェクト(kubectl) | なし(全部 CFn) | サービスアカウントの作成と注釈 |
 
 ---
 
@@ -185,7 +188,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 |---|---|---|
 | V1 | 4 構成のデプロイとデータ疎通 | 構成 2 は 2026-10-29(4.3)、構成 1 は 2026-11-10(3.3)に確認 [実測]。構成 3・4 は未実施で、cfn-lint のみ [実測] |
 | V2 | Trident EKS アドオンの現行名・バージョン | 2026-10-29 の ap-northeast-1 で `netapp_trident-operator` が存在し、既定は v26.6.2-eksbuild.1、対応する Kubernetes は 1.36 まで [実測]。名称と版は変わりうるため、デプロイ前に再確認する。Trident 26.10 と Kubernetes 1.37 は 9.3 |
-| V3 | EKS Pod Identity の Fargate 対応可否 | 本メモは IRSA を採用。Pod Identity の Fargate 対応は未確認 [未測定] |
+| V3 | EKS Pod Identity の Fargate 対応可否 | 解決: Fargate の Pod には使えない [文書]([Pod Identity の制約](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)、2026-11-10 に確認)。本メモが IRSA を採るのはこのため |
 | V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | 実機で権限設計を確認する必要あり [未測定] |
 | V5 | S3 Access Point 経由の実効スループット | 文書は「ファイルシステムのプロビジョンドスループット依存」と記載。実測は未実施 [未測定] |
 
@@ -207,7 +210,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 | Trident EKS アドオンの現行名・バージョン | V2 | `aws eks describe-addon-versions --addon-name netapp_trident-operator`。2026-10-29 の ap-northeast-1 では v26.6.2-eksbuild.1 が既定で、本メモの 25.02 参照から進んでいる [実測] |
 | S3 Access Point の二層認可(IAM + ファイルシステムレベルの UNIX / Windows ユーザー) | V4 | アクセスポイントに紐づく UNIX ユーザーと ONTAP 側のファイル権限の対応を実機で設計する [文書] |
 | 対象リージョンでの提供 | V1 全般 | 第 2 世代 FSx for ONTAP は 2026-04 に 4 リージョン + GovCloud へ拡大。S3 Access Points は東京(ap-northeast-1)対応 [文書]。使うリージョンでの提供を確認する |
-| IRSA の trust condition(EKS Fargate) | V3 | `sub` / `aud` はクラスタ作成後に手動で trust policy へ追加(5.2)。共用アカウントで未設定のまま放置しない |
+| IRSA の trust condition(EKS Fargate) | V3 | trust は `aud` / `sub` で作成時に絞られる(5.2)。絞りが効くことは実機で確認する(別のサービスアカウントの Pod が拒否されること) |
 
 **推奨デプロイ順序**: 最小の構成 1(ECS on EC2 + NFS、CloudFormation 完結・Trident 不要・S3 Access Points 不要)から始める。疎通(タスクから `/data` への読み書き)を確認したら削除し、構成 2(Trident の Kubernetes オブジェクトを kubectl / Helm で適用)、構成 3・4(S3 Access Points、IRSA の手動手順あり)へ段階的に進む。
 
