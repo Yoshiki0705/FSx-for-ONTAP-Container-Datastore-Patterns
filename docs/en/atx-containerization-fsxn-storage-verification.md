@@ -171,7 +171,7 @@ Because access is via the S3 SDK, the app must be written for object access. It 
 | App change | None | None | Required (S3 SDK) | Required (S3 SDK) |
 | Authentication | Via host (no IAM) | Secrets Manager / cert (Trident) | Task role (IAM) | IRSA (IAM) |
 | Main use cases | Migration assuming existing files | Stateful / DB / shared files | Analytics / AI / object-first | Same |
-| Out of CloudFormation scope | None (all CFn) | PV objects (kubectl) | None (all CFn) | Service account annotation / trust sub |
+| Out of CloudFormation scope | None (all CFn) | PV objects (kubectl) | None (all CFn) | Service account creation and annotation |
 
 ---
 
@@ -185,7 +185,7 @@ Confirmed that `make cfn-lint` (cfn-lint, `templates/*.yaml`) passes with exit 0
 |---|---|---|
 | V1 | Deploying the four configurations and data connectivity | Config 2 was checked on 2026-10-29 (4.3) and config 1 on 2026-11-10 (3.3) [Tested]. Configs 3 and 4 are not done; only cfn-lint is [Tested] |
 | V2 | Current Trident EKS add-on name and version | On 2026-10-29 in ap-northeast-1, `netapp_trident-operator` existed, the default was v26.6.2-eksbuild.1, and the highest supported Kubernetes version was 1.36 [Tested]. Names and versions change, so reconfirm before deploying. Trident 26.10 and Kubernetes 1.37 are in 9.3 |
-| V3 | Whether EKS Pod Identity works on Fargate | This memo uses IRSA. Pod Identity on Fargate is unconfirmed [Not measured] |
+| V3 | Whether EKS Pod Identity works on Fargate | Resolved: it cannot be used for Pods on Fargate [Documented] ([Pod Identity restrictions](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html), checked 2026-11-10). This is why this memo uses IRSA |
 | V4 | Mapping of the S3 access point UNIX user to ONTAP-side permissions | Permission design to confirm on real hardware [Not measured] |
 | V5 | Effective throughput via the S3 access point | Docs state "depends on the file system's provisioned throughput". Not measured [Not measured] |
 
@@ -264,9 +264,20 @@ The documented storage options are (source: [Storage with Nitro Sandboxes](https
 | Control: an isolated pod using only `emptyDir` | Worked. The kernel inside the pod was 6.18.54 against 6.18.56 on the normal node, so it runs on a separate kernel |
 | Control: an isolated pod mounts an Amazon EBS PVC (the Auto Mode EBS CSI) | Worked. Write and read-back succeeded |
 
-Isolated pods worked on the same cluster and node type (c8a.large), and an EBS PVC mounted. Only the Trident NFS PV failed. That matches the fact that the storage page does not list Trident. I did not isolate the cause (for example, NodePublish completing on the host while the mount path never reaches the sandbox is a guess); Trident's info-level log has no record of it. This is one observation; reproduction and behavior on other versions are unconfirmed.
+Isolated pods worked on the same cluster and node type (c8a.large), and an EBS PVC mounted. Only the Trident NFS PV failed. That matches the fact that the storage page does not list Trident.
 
-Whether an iSCSI PV can be handed to an isolated pod was not tested, because iSCSI itself was unavailable on the Auto Mode node (9.2). A pod with `sandbox.amazonaws.com/network-isolated: "true"` has no network device, and the page states that EFS is unavailable. I infer that network-reached FSx for ONTAP is unreachable for the same reason, but I did not test it.
+**Cause and alternatives (AWS Support reply, 2026-11-10)**: According to the reply, a Nitro Sandbox does not accept a filesystem mounted by the parent instance. It receives only supported block devices, or performs a supported network-filesystem mount inside the guest. Trident mounts NFS under the parent node's kubelet CSI path (`/var/lib/kubelet/pods/…/volumes/kubernetes.io~csi/…/mount`), which an ordinary pod can use through the node kernel but which is not visible inside the sandbox guest. The reply said the error above (that path cannot be opened, `no such file or directory`) is consistent with this limitation. This explanation is not in the public documentation, and I did not confirm the mechanism myself.
+
+The reply listed these persistent-storage options for isolated pods, and said none of them replaces an FSx for ONTAP RWX volume:
+
+- Amazon EBS: block storage for one sandbox pod, with `ReadWriteOncePod`.
+- Amazon EFS: shared read-write POSIX storage; the NFS mount is created inside each sandbox.
+- Amazon S3 Files (through the Amazon EFS CSI driver): an S3-backed shared POSIX filesystem, where that model suits the application.
+- `emptyDir`, ConfigMap, Secret, projected, and downwardAPI, plus the documented tmpfs-backed CSI drivers. These are not persistent-storage replacements.
+
+AWS's sample collection also has three storage blueprints: `ebs`, `efs`, and `s3-files` (source: [sample-eks-nitro-sandbox storage](https://github.com/aws-samples/sample-eks-nitro-sandbox/tree/main/examples/storage)).
+
+For iSCSI PVs the reply said the following. The NFS result does not settle iSCSI, because iSCSI uses a device rather than a directory mounted by the parent. Current AWS guidance, however, has not qualified Trident iSCSI, multipath, or device-mapper volumes for sandbox pods, so Trident iSCSI cannot be confirmed as a supported option. In this repository, the Auto Mode node had no iSCSI tools (9.2), so I did not test it. A pod with `sandbox.amazonaws.com/network-isolated: "true"` has no network device, and the page states that EFS is unavailable. I infer that network-reached FSx for ONTAP is unreachable for the same reason, but I did not test it.
 
 The S3 Access Points object API used by configs 3 and 4 is an SDK call over the network, so in principle a sandboxed pod can use it. Authentication needs care. In isolated mode the service account token is not replicated into the sandbox, and IMDS returns no credentials (only five placement paths respond). EKS Pod Identity credentials are allowed. I have not confirmed that config 4's IRSA (which uses the service account token) works in an isolated-mode pod; a Pod Identity design is the straightforward one on paper. As V3 notes, Pod Identity on Fargate is separately not measured.
 

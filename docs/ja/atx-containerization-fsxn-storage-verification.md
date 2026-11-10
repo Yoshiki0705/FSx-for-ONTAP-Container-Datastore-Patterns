@@ -148,7 +148,7 @@ FSx for ONTAP の S3 Access Points は、ボリュームのデータを S3 オ�
 
 **アクセスポイントポリシーの循環回避**: タスク / IRSA ロールがアクセスポイント ARN を参照し、アクセスポイントポリシーがそのロール ARN を参照すると循環する。同一アカウントでは identity policy とアクセスポイントポリシーのどちらかが許可すれば成立するため、アクセスポイントポリシーの Principal をアカウントルートにし、ロール側の identity policy でアクセスポイントを絞った。VPC origin が VPC 外の要求を deny する。
 
-**IRSA の trust condition(構成 4)**: `<OIDC発行者>:sub` という condition キーは、発行者ホストがクラスタ作成後にしか判明せず、CloudFormation は intrinsic function で condition の**キー**を作れない。そのためテンプレートは Federated principal のみを付与し、`sub` / `aud` のスコープはデプロイ後に trust policy へ手で追加する。共用アカウントでスコープ未設定のまま放置しないこと。
+**IRSA の trust condition(構成 4)**: condition のキー `<OIDC発行者>:aud` と `:sub` には発行者ホストが入り、CloudFormation は map の**キー**に intrinsic function を置けない。そこでテンプレートは trust policy を `Fn::Sub` で包んだ JSON 文書にし、発行者 URL から `https://` を除いたホストを変数として渡す。ロールは作成時から `aud` と、名前空間 + サービスアカウントの `sub` に絞られ、デプロイ後に手で足す作業は無い。この書き方には AWS re:Post に動作例がある [文書]([StringEquals with Sub in both key and value](https://repost.aws/questions/QUyqQ4VGzLRqKDZgI-RloR2A/cloudformation-stringequals-with-sub-in-both-key-and-value))。構文は cfn-lint を通るが、デプロイは未実施で、絞りが効くこと(別のサービスアカウントの Pod が拒否されること)は未確認 [未測定]。EKS Pod Identity は Fargate の Pod に使えないため、構成 4 は IRSA を使う [文書]。
 
 ### 5.3 オブジェクト API の制約 [文書]
 
@@ -171,7 +171,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 | アプリ改修 | 不要 | 不要 | 必要(S3 SDK) | 必要(S3 SDK) |
 | 認証 | ホスト経由(IAM 不要) | Secrets Manager / 証明書(Trident) | タスクロール(IAM) | IRSA(IAM) |
 | 主なユースケース | 既存ファイル前提の移行 | ステートフル / DB / 共有ファイル | 分析・AI 連携・オブジェクト前提 | 同左 |
-| CloudFormation スコープ外 | なし(全部 CFn) | PV 系オブジェクト(kubectl) | なし(全部 CFn) | サービスアカウント注釈 / trust の sub |
+| CloudFormation スコープ外 | なし(全部 CFn) | PV 系オブジェクト(kubectl) | なし(全部 CFn) | サービスアカウントの作成と注釈 |
 
 ---
 
@@ -185,7 +185,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 |---|---|---|
 | V1 | 4 構成のデプロイとデータ疎通 | 構成 2 は 2026-10-29(4.3)、構成 1 は 2026-11-10(3.3)に確認 [実測]。構成 3・4 は未実施で、cfn-lint のみ [実測] |
 | V2 | Trident EKS アドオンの現行名・バージョン | 2026-10-29 の ap-northeast-1 で `netapp_trident-operator` が存在し、既定は v26.6.2-eksbuild.1、対応する Kubernetes は 1.36 まで [実測]。名称と版は変わりうるため、デプロイ前に再確認する。Trident 26.10 と Kubernetes 1.37 は 9.3 |
-| V3 | EKS Pod Identity の Fargate 対応可否 | 本メモは IRSA を採用。Pod Identity の Fargate 対応は未確認 [未測定] |
+| V3 | EKS Pod Identity の Fargate 対応可否 | 解決: Fargate の Pod には使えない [文書]([Pod Identity の制約](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)、2026-11-10 に確認)。本メモが IRSA を採るのはこのため |
 | V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | 実機で権限設計を確認する必要あり [未測定] |
 | V5 | S3 Access Point 経由の実効スループット | 文書は「ファイルシステムのプロビジョンドスループット依存」と記載。実測は未実施 [未測定] |
 
@@ -264,9 +264,20 @@ Pod ごとに専用の Nitro Sandbox(Firecracker の microVM)で動かす機能�
 | 対照: 隔離 Pod が `emptyDir` だけを使う | 成立。Pod 内のカーネルは 6.18.54、通常ノードは 6.18.56 で、別のカーネルで動いている |
 | 対照: 隔離 Pod が Amazon EBS の PVC(Auto Mode の EBS CSI)をマウント | 成立。書き込みと読み戻しができた |
 
-隔離 Pod は同じクラスタ、同じノード種別(c8a.large)で成立しており、EBS の PVC も使えた。失敗したのは Trident の NFS の PV だけである。この結果は、同ページがストレージとして挙げた方式に Trident が含まれないことと整合する。失敗の原因そのもの(NodePublish がホスト側で完了しているのに Sandbox にマウント先が引き渡されない、といった推測)は、Trident の info レベルのログに記録が無く、切り分けていない。1 回の観測で、再現と別バージョンでの挙動は未確認である。
+隔離 Pod は同じクラスタ、同じノード種別(c8a.large)で成立しており、EBS の PVC も使えた。失敗したのは Trident の NFS の PV だけである。この結果は、同ページがストレージとして挙げた方式に Trident が含まれないことと整合する。
 
-iSCSI の PV を隔離 Pod に渡せるかは、Auto Mode のノードで iSCSI 自体が使えなかったため(9.2)、確かめられていない。`sandbox.amazonaws.com/network-isolated: "true"` の Pod はネットワークデバイスを持たず、EFS は使えないと明記されている。同じ理由でネットワーク経由の FSx for ONTAP にも到達できないと推測するが、これは試していない。
+**原因と代替(AWS サポートの回答、2026-11-10)**: 回答によると、Nitro Sandbox は親ノードがマウントしたファイルシステムを受け付けない。Sandbox が受け取るのは、対応するブロックデバイスか、ゲストの内側で行うネットワークファイルシステムのマウントだけである。Trident は NFS を親ノードの kubelet の CSI パス(`/var/lib/kubelet/pods/…/volumes/kubernetes.io~csi/…/mount`)にマウントするため、通常の Pod ではノードのカーネル経由で使えるが、Sandbox のゲストからは見えない。上のエラー(そのパスを開けない `no such file or directory`)はこの制約と整合する、という説明だった。この説明は公開ドキュメントには書かれておらず、私が実機でその機構を確認したものでもない。
+
+回答が挙げた、隔離 Pod の永続ストレージの選択肢は次のとおり。FSx for ONTAP の RWX の PV の代わりになる選択肢ではないと明記されている。
+
+- Amazon EBS: 1 つの Sandbox Pod が使うブロックストレージ。`ReadWriteOncePod` を使う。
+- Amazon EFS: 共有の読み書き POSIX ストレージ。NFS のマウントは各 Sandbox の内側で行われる。
+- Amazon S3 Files(Amazon EFS CSI ドライバ経由): S3 を裏に持つ共有 POSIX ファイルシステム。用途に合う場合の選択肢。
+- `emptyDir`、ConfigMap、Secret、projected、downwardAPI と、ドキュメントにある tmpfs 系の CSI。永続ストレージの代替ではない。
+
+AWS のサンプル集にも `ebs`、`efs`、`s3-files` の 3 つのブループリントがある(出典: [sample-eks-nitro-sandbox の storage](https://github.com/aws-samples/sample-eks-nitro-sandbox/tree/main/examples/storage))。
+
+iSCSI の PV については、回答は次のとおり。NFS の結果は iSCSI の可否を決めない(iSCSI は親ノードのディレクトリではなくデバイスを使う)。一方で、AWS の現行のガイダンスは Trident の iSCSI、multipath、device-mapper のボリュームを Sandbox の Pod について検証しておらず、Trident の iSCSI をサポートされる選択肢として確認できない。本リポジトリでは、Auto Mode のノードに iSCSI 用ツールが無く(9.2)、実機でも試していない。`sandbox.amazonaws.com/network-isolated: "true"` の Pod はネットワークデバイスを持たず、EFS は使えないと明記されている。同じ理由でネットワーク経由の FSx for ONTAP にも到達できないと推測するが、これは試していない。
 
 構成 3・4 で使う S3 Access Points のオブジェクト API は、ネットワーク経由の SDK 呼び出しなので、Sandbox の Pod からも原理的には使える。ただし認証は注意が要る。隔離モードではサービスアカウントのトークンが Sandbox に複製されず、IMDS からは認証情報を取れない(配置情報の 5 パスのみ応答する)。一方で EKS Pod Identity の認証情報は許可されている。構成 4 の IRSA(サービスアカウントのトークンを使う)が隔離モードの Pod で動くかは確認しておらず、Pod Identity を使う設計が文書上は素直である。なお V3 のとおり、Pod Identity の Fargate 対応は別途未測定である。
 
