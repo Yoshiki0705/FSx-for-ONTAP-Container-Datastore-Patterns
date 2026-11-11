@@ -318,6 +318,8 @@ Pod ごとに専用の Nitro Sandbox(Firecracker の microVM)で動かす機能�
 
 iSCSI の PV を隔離 Pod に渡せるかは、Auto Mode のノードで iSCSI 自体が使えなかったため(9.2)、確かめられていない。`sandbox.amazonaws.com/network-isolated: "true"` の Pod はネットワークデバイスを持たず、EFS は使えないと明記されている。同じ理由でネットワーク経由の FSx for ONTAP にも到達できないと推測するが、これは試していない。
 
+**公開での追跡** [2026-11-10 に提出]。同ページの冒頭は、ストレージを「標準の Kubernetes CSI ドライバ」で使えると書くが、サードパーティの CSI ドライバの NFS ボリュームには触れていない。この点の明記を[文書フィードバック](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259)で、サードパーティ CSI の NFS ボリュームの対応を[機能要望](https://github.com/aws/containers-roadmap/issues/2911)で、iSCSI / NVMe/TCP のブロックボリュームの対応を[別の機能要望](https://github.com/aws/containers-roadmap/issues/2912)で出した。ブロックの要望には、隔離 Pod での iSCSI / NVMe/TCP を試していないことを書いた。issue の提出は、AWS が受理や優先付けをしたことを意味しない。
+
 構成 3・4 で使う S3 Access Points のオブジェクト API は、ネットワーク経由の SDK 呼び出しなので、Sandbox の Pod からも原理的には使える。ただし認証は注意が要る。隔離モードではサービスアカウントのトークンが Sandbox に複製されず、IMDS からは認証情報を取れない(配置情報の 5 パスのみ応答する)。一方で EKS Pod Identity の認証情報は許可されている。構成 4 の IRSA(サービスアカウントのトークンを使う)が隔離モードの Pod で動くかは確認しておらず、Pod Identity を使う設計が文書上は素直である。なお V3 のとおり、Pod Identity の Fargate 対応は別途未測定である。
 
 Sandbox に制約が多い項目(`hostNetwork: true` で起動失敗、`hostUsers: false` 非対応、GPU 非対応、Pod あたりの vCPU 密度の上限など)は、Trident の node pod そのものには当たらないと推測する。node pod が使うのは通常のランタイムで、Sandbox を指定するのはアプリケーションの Pod だからである。この点も文書に明記はない。
