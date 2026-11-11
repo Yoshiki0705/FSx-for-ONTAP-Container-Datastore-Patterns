@@ -153,7 +153,7 @@ ECS から FSx for ONTAP を使う手順は、**EC2 起動タイプ**を前提�
 | EKS Fargate(他ストレージ) | EFS CSI は Fargate で動的プロビジョニング不可・静的のみ。EBS CSI は controller は Fargate 可だが node DaemonSet は EC2 のみ。Fargate で使える永続は EFS(静的)に限られる | [Amazon EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html)、[Amazon EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) |
 | ECS Fargate | Fargate で使えるボリュームは Amazon EBS、Amazon EFS、Amazon S3 Files、bind mount。`dockerVolumeConfiguration`(Docker ボリューム)は EC2 のみ。FSx for ONTAP のネイティブのマウントは EC2 のみで、Fargate からは S3 Access Points 経由で使うと AWS は書く(2026-11-11 に確認) | [Storage options for Amazon ECS tasks](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_data_volumes.html)、[Amazon ECS task definition differences for Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html) |
 
-したがって「AWS Transform の ECS デプロイは Fargate 対応(3.3)」と「Fargate では FSx for ONTAP を使えない(本節)」は両立する。**Fargate の運用簡素化を取るなら FSx for ONTAP は付けられず、FSx for ONTAP の永続ボリュームを取るなら EKS の EC2 ワーカーノード(または ECS の EC2 起動タイプ)を選ぶ**、というトレードオフになる。
+したがって「AWS Transform の ECS デプロイは Fargate 対応(3.3)」と「Fargate では FSx for ONTAP をマウントできない(本節)」は両立する。**Fargate の運用簡素化を取るなら FSx for ONTAP はマウントできず、S3 Access Points 経由の S3 API で読み書きする(アプリの改修が要る)。ファイル I/O のまま FSx for ONTAP の永続ボリュームを使うなら、EKS の EC2 ワーカーノード(または ECS の EC2 起動タイプ)を選ぶ**、というトレードオフになる。
 
 ---
 

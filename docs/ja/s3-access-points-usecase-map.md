@@ -87,7 +87,7 @@ AI エージェントや初見の読者は、次の 6 点を先に確認する�
 | ポリシー | ONTAP のバケットポリシー(使えるアクションは限定的) | IAM とアクセスポイントのポリシー |
 | 未対応の機能 | バージョニング、Object Lock、ライフサイクル | 同じ。加えて ACL(`bucket-owner-full-control` 以外)、条件付き書き込み |
 | チェックサム | 9.20.1 以降で保存して返す | アップロード時に検証するが、保存せず返さない |
-| 保護 | 非同期のボリューム SnapMirror。同期とSVM-DR は対象外 | FSx の機能(バックアップ、SnapMirror)。途中のマルチパートは対象外 |
+| 保護 | 非同期のボリューム SnapMirror。同期と SVM-DR は対象外 | FSx の機能(バックアップ、SnapMirror)。途中のマルチパートは対象外 |
 
 **要求者ごとの権限判定は、AWS 側には引き継がれない。** オンプレミスで S3 ユーザーごとに NAS の権限を適用していた設計は、アクセスポイントを要求者や権限の単位で分けて作り直す。AWS 側の仕組みが NAS バケットと同じ実装の上にあるかは、AWS と NetApp のどちらの文書にも書かれていない。この文書では「同じ未対応の機能が並ぶ」ことを事実とし、実装の関係は仮説に留める [仮説]。
 
@@ -132,7 +132,7 @@ SnapMirror の宛先ボリュームから分析する使い方について、AWS
 
 | # | 確認すること | 根拠 |
 |---|---|---|
-| 1 | ONTAP が 9.17.1 以上か。既存のファイルシステムが 9.17.1 になる方法は、2025-12-02 の発表にある「次回のメンテナンスウィンドウ」の 1 文しか見つからなかった | [文書]([制約](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/access-point-for-fsxn-restrictions-limitations-naming-rules.html))、[公表] |
+| 1 | ONTAP が 9.17.1 以上か(ONTAP の REST API の `GET /api/cluster?fields=version` か CLI の `version` で読める)。既存のファイルシステムが 9.17.1 になる方法は、2025-12-02 の発表にある「次回のメンテナンスウィンドウ」の 1 文しか見つからなかった | [文書]([制約](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/access-point-for-fsxn-restrictions-limitations-naming-rules.html))、[公表] |
 | 2 | ボリュームがマウントされているか(ジャンクションパス)。オフラインやアンマウントになると MISCONFIGURED になる | [文書] |
 | 3 | SVM で S3 プロトコルが許可されているか | [文書] |
 | 4 | 指定する ID が ONTAP で解決できるか。UNIX はネームサービスの設定(ローカル、LDAP)、Windows は参加した AD で確かめる。解決できなければ FAILED か MISCONFIGURED になる | [文書]、[実測: 本リポジトリ](`ec2-user` で FAILED。本リポジトリで試した ID は UNIX のみ) |
@@ -174,7 +174,7 @@ SnapMirror の宛先ボリュームから分析する使い方について、AWS
 |---|---|---|---|---|
 | Amazon ECS(AWS Fargate) | VPC | S3 SDK で alias か ARN を呼ぶ。タスクロール | [文書]([ECS のストレージ](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_data_volumes.html): FSx for ONTAP は EC2 でネイティブのマウント、Fargate は S3 Access Points 経由)、[実測: 本リポジトリ] | マウントは無い。Gateway エンドポイントは、オンプレミスやピアリング経由の通信を通さない |
 | Amazon EKS(AWS Fargate) | VPC | IRSA。CoreDNS を Fargate に載せる | [実測: 本リポジトリ] | AWS の公開ページで EKS を名指ししたものは見つからなかった |
-| Amazon EKS(EC2) | VPC | ノードか Pod の IAM で S3 SDK を呼ぶ | [公開された言及なし] | 構成 2 の実測は Trident の PV で、S3 経路とは別 |
+| Amazon EKS(EC2) | VPC | ノードか Pod の IAM で S3 SDK を呼ぶ | [公開された言及なし] | storage-verification の EKS on EC2 の実測は Trident の PV で、S3 経路とは別 |
 | AWS Lambda | VPC 外は Internet、VPC 内は VPC | S3 SDK。ファイルの自動処理 | [文書]、[実測: 他の Spoke]([ネットワークの検証](https://github.com/Yoshiki0705/fsxn-lakehouse-integrations/blob/main/docs/en/fsx-ontap-s3ap-networking.md)) | VPC 内の Lambda から Internet origin を Gateway エンドポイント経由で呼ぶとタイムアウトした。NAT か VPC の外の Lambda は通った |
 | Amazon EC2 | どちらも | AWS CLI や SDK | [文書] | NFS / SMB のマウントと併用できる |
 | AWS Batch | 記載なし | 記載なし | [公開された言及なし] | コンテナのジョブなので、S3 SDK を使えば ECS と同じと推測する [仮説] |
@@ -248,7 +248,7 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 
 ## 9. コンテナでの実機確認と、隔離 Pod との組み合わせ
 
-![図 1: コンテナから S3 Access Points を通って FSx for ONTAP のボリュームに到達する経路。Amazon ECS と Amazon EKS(どちらも AWS Fargate)が S3 Gateway エンドポイントから S3 Access Points(VPC origin)を呼び、Amazon FSx for NetApp ONTAP のボリュームに届く。Amazon EC2 は NFS / SMB で同じボリュームを使う](../_assets/images/s3ap-container-overview.svg)
+![図 1: コンテナから S3 Access Points を通って FSx for ONTAP のボリュームまでの経路。Amazon ECS と Amazon EKS(どちらも AWS Fargate)が S3 Gateway エンドポイントから S3 Access Points(VPC origin)を呼び、Amazon FSx for NetApp ONTAP のボリュームに至る。Amazon EC2 は NFS / SMB で同じボリュームを使う](../_assets/images/s3ap-container-overview.svg)
 
 図 1: コンテナがボリュームに到達する経路。
 
@@ -267,11 +267,11 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 | ボリューム | マウント済み。SVM で S3 を許可 | [文書] |
 | 使えない S3 機能 | ACL(`bucket-owner-full-control` 以外)、Object Annotations、Requester Pays、バージョニング、Object Lock、ライフサイクル、静的 Web ホスティング、MFA Delete、条件付き書き込み、バケット通知の取得 | [文書]([互換性](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/access-points-for-fsxn-object-api-support.html)) |
 | ストレージクラス・暗号化 | `FSX_ONTAP` のみ、SSE-FSX のみ | [文書] |
-| アップロードの最大サイズ | 1 回の PutObject と 1 パートは 5 GiB(5,368,709,120 バイト)、マルチパートでのオブジェクト全体は 50 GiB。全体の上限は CompleteMultipartUpload で初めて判定され、転送を終えてから拒否される。アップロード前にクライアント側でサイズを確かめる | [文書](50 GiB)、[実測: 他の Spoke]([オブジェクトサイズの検証](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/s3ap-object-size-limits-verification.en.md)、2026-08-02) |
+| アップロードの最大サイズ | 1 回の PutObject と 1 パートは 5 GiB(5,368,709,120 バイト)、マルチパートでのオブジェクト全体は 50 GiB。全体の上限は CompleteMultipartUpload で初めて判定され、転送を終えてから拒否される。アップロード前にクライアント側でサイズを確かめる。測定は第 1 世代 Single-AZ、128 MBps、ID は `root`、Internet origin | [文書](50 GiB)、[実測: 他の Spoke]([オブジェクトサイズの検証](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/s3ap-object-size-limits-verification.en.md)、2026-08-02) |
 | コピー | 同一アクセスポイント内のみ [文書]。UploadPartCopy は、文書上は対応だが `NoSuchKey` で失敗した | [文書]、[実測: 他の Spoke](同上) |
 | チェックサム | 検証するが保存せず、返さない。ETag は MD5 ではない | [文書] |
 | 途中のマルチパート | ボリュームのバックアップに含まれない。使った容量はファイルシステムの `StorageUsed` に出て、ボリュームには出ない | [文書] |
-| スループット | ファイルシステムのプロビジョンド スループットに依存。遅延は「数十ミリ秒」[文書]。128 MBps の第 1 世代 Single-AZ、Internet origin で、1 MB の GetObject の P50 は VPC 外の Lambda から 73 ms、手元のクライアントから 175 ms(並列度 10)。並列度 25 以上で P99 が 1 秒を超えた。サイジングの目安で、サービスの上限ではない | [文書]、[実測: 他の Spoke]([ベンチマーク](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/s3ap-benchmark-results.en.md)、2026-05) |
+| スループット | ファイルシステムのプロビジョンド スループットに依存。遅延は「数十ミリ秒」[文書]。128 MBps の第 1 世代 Single-AZ、Internet origin で、1 MB の GetObject の P50 は VPC 外の Lambda から 73 ms、手元のクライアントから 175 ms(並列度 10)。並列度 25 以上で P99 が 1 秒を超えた。VPC origin の経路はこのベンチマークでは測っていない。サイジングの目安で、サービスの上限ではない | [文書]、[実測: 他の Spoke]([ベンチマーク](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/s3ap-benchmark-results.en.md)、2026-05) |
 | 料金 | FSx の料金に加え、アクセスポイント経由の S3 リクエストとデータ転送が課金される。単価は[FSx for ONTAP の料金](https://aws.amazon.com/fsx/netapp-ontap/pricing/)と S3 の料金ページで、リージョンと日付を確かめる。VPC 内の Lambda から Internet origin を使うなら NAT の料金も加わる | [文書]、[公表] |
 | ボリューム数の上限 | 第 1 世代と第 2 世代の HA ペア 1 組で 500 → 491、HA ペア 2 組で 1,000 → 975、12 組で 903 | [文書] |
 | 変更できないもの | origin、ファイルシステムの ID | [文書]、[実測: 本リポジトリ](ID は作成後に変更できない) |
