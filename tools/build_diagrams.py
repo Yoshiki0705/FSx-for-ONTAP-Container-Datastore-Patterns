@@ -66,9 +66,12 @@ ICONS = {
     ),
     "ec2": "Architecture-Service-Icons_{d}/Arch_Compute/64/Arch_Amazon-EC2_64.svg",
     "lambda": "Architecture-Service-Icons_{d}/Arch_Compute/64/Arch_AWS-Lambda_64.svg",
-    "ecs": (
-        "Architecture-Service-Icons_{d}/Arch_Containers/64/"
-        "Arch_Amazon-Elastic-Container-Service_64.svg"
+    # A task or pod on Fargate is drawn with the AWS Fargate icon, because Fargate is the compute
+    # that runs the code making the S3 call; the orchestrator goes in the qualifier line. This
+    # follows how the AWS documentation names the pair ("Amazon ECS on AWS Fargate", "Amazon EKS
+    # ... Pods on AWS Fargate"), and the service-name gate then requires "AWS Fargate" in the label.
+    "fargate": (
+        "Architecture-Service-Icons_{d}/Arch_Containers/64/Arch_AWS-Fargate_64.svg"
     ),
     "eks": (
         "Architecture-Service-Icons_{d}/Arch_Containers/64/"
@@ -91,6 +94,10 @@ ICONS = {
         "Architecture-Service-Icons_{d}/Arch_Networking-Content-Delivery/64/"
         "Arch_Amazon-CloudFront_64.svg"
     ),
+    "ebs": (
+        "Architecture-Service-Icons_{d}/Arch_Storage/64/"
+        "Arch_Amazon-Elastic-Block-Store_64.svg"
+    ),
     # Resource icons: a single file with no Light/Dark variant, so no `{v}`. Placed at 48.
     "vpc_endpoint": (
         "Resource-Icons_{d}/Res_Networking-Content-Delivery/"
@@ -103,13 +110,53 @@ ICONS = {
     ),
 }
 
+# Icons that are not AWS assets. The AWS package (07312026, the latest quarterly release when this
+# was written) has an Amazon EKS service icon but no icon for EKS Auto Mode, a pod, or a
+# PersistentVolume; its only EKS resource icon is EKS on Outposts. For the Kubernetes objects the
+# figures use the Kubernetes community icon set, which exists to standardize Kubernetes
+# architecture diagrams and is licensed Apache-2.0 or CC-BY-4.0
+# (https://github.com/kubernetes/community/tree/main/icons). EKS Auto Mode is a mode of Amazon EKS,
+# so it is drawn with the Amazon EKS service icon and a qualifier line, as the naming rule asks.
+#
+# The files live under docs/_assets/icons/, which is gitignored: as with the AWS package, what gets
+# committed is the finished diagram with the icon embedded, not the icon as a file of its own.
+LOCAL_ICON_DIR = ROOT / "docs" / "_assets" / "icons"
+# NetApp Trident is drawn with the logo its own repository publishes (logo/trident.png in
+# https://github.com/NetApp/trident, the file its README shows). It is the only logo file there:
+# there is no dark variant, and recolouring a product mark is not ours to do, so on the dark canvas
+# the same logo sits on a white plate instead (PLATED_ICONS).
+LOCAL_ICONS = {
+    "k8s_pod": "k8s-pod.svg",
+    "k8s_pv": "k8s-pv.svg",
+    "trident": "netapp-trident.png",
+}
+LOCAL_ICON_URLS = {
+    "k8s_pod": (
+        "https://raw.githubusercontent.com/kubernetes/community/"
+        "307ae50e8e4246de172f195c73e3f026b4f0c7ff/icons/svg/resources/unlabeled/pod.svg"
+    ),
+    "k8s_pv": (
+        "https://raw.githubusercontent.com/kubernetes/community/"
+        "307ae50e8e4246de172f195c73e3f026b4f0c7ff/icons/svg/resources/unlabeled/pv.svg"
+    ),
+    "trident": (
+        "https://raw.githubusercontent.com/NetApp/trident/"
+        "6fe65ee071e24485b85ccfed2d17c703fcec7977/logo/trident.png"
+    ),
+}
+# A data URI needs the type that matches the bytes. Getting it wrong exports a broken-image
+# placeholder while still reporting success.
+MIME_BY_SUFFIX = {".png": "image/png", ".svg": "image/svg+xml"}
+# Marks drawn on a white plate on the dark canvas, because the mark has no dark variant.
+PLATED_ICONS = {"trident"}
+
 # Native sizes. Rescaling is what the AWS icon guidelines forbid, so the size follows the asset:
 # 80 for an architecture (service) icon, 48 for a resource icon.
 ICON_SIZE = {
     "fsx_ontap": 80,
     "ec2": 80,
     "lambda": 80,
-    "ecs": 80,
+    "fargate": 80,
     "eks": 80,
     "athena": 80,
     "glue": 80,
@@ -117,6 +164,12 @@ ICON_SIZE = {
     "bedrock": 80,
     "transfer": 80,
     "cloudfront": 80,
+    "ebs": 80,
+    # The Kubernetes icons have no prescribed size; 48 matches the AWS resource icons they sit with.
+    "k8s_pod": 48,
+    "k8s_pv": 48,
+    # The Trident logo is portrait (350x387); aspect=fixed fits it inside the square.
+    "trident": 48,
     "vpc_endpoint": 48,
     "s3_access_point": 48,
 }
@@ -237,10 +290,13 @@ def note_style(stroke: str, ink: str) -> str:
     so it aligns left and to the top rather than inheriting `box_style`'s centring. No edge touches
     it: a note annotates the figure, it is not a step in the flow, so the direction gate never sees
     it.
+
+    The corner radius is absolute. draw.io's default arc is a share of the shorter side, so a tall
+    notes box grows a corner wide enough to run through the first letters of its heading.
     """
     return (
-        f"rounded=1;whiteSpace=wrap;html=1;strokeColor={stroke};fillColor=none;"
-        f"fontColor={ink};fontSize={FONT_BODY};verticalAlign=top;align=left;"
+        f"rounded=1;absoluteArcSize=1;arcSize=24;whiteSpace=wrap;html=1;strokeColor={stroke};"
+        f"fillColor=none;fontColor={ink};fontSize={FONT_BODY};verticalAlign=top;align=left;"
         "spacingLeft=10;spacingRight=10;spacingTop=8;"
     )
 
@@ -270,12 +326,12 @@ LABELS: dict[str, dict[str, str]] = {
     "aws_region": {"ja": "AWS リージョン", "en": "AWS Region"},
     # --- figure 1: containers reach the volume through an access point ---
     "f1_ecs": {
-        "ja": "Amazon ECS<br>(AWS Fargate)",
-        "en": "Amazon ECS<br>(AWS Fargate)",
+        "ja": "AWS Fargate<br>(Amazon ECS)",
+        "en": "AWS Fargate<br>(Amazon ECS)",
     },
     "f1_eks": {
-        "ja": "Amazon EKS<br>(AWS Fargate)",
-        "en": "Amazon EKS<br>(AWS Fargate)",
+        "ja": "AWS Fargate<br>(Amazon EKS)",
+        "en": "AWS Fargate<br>(Amazon EKS)",
     },
     "f1_endpoint": {
         "ja": "S3 Gateway<br>エンドポイント",
@@ -438,17 +494,88 @@ LABELS: dict[str, dict[str, str]] = {
         "en": "AWS Lambda<br>(outside a VPC)",
     },
     "f3_ecs": {
-        "ja": "Amazon ECS<br>(AWS Fargate)",
-        "en": "Amazon ECS<br>(AWS Fargate)",
+        "ja": "AWS Fargate<br>(Amazon ECS)",
+        "en": "AWS Fargate<br>(Amazon ECS)",
     },
     "f3_eks": {
-        "ja": "Amazon EKS<br>(AWS Fargate)",
-        "en": "Amazon EKS<br>(AWS Fargate)",
+        "ja": "AWS Fargate<br>(Amazon EKS)",
+        "en": "AWS Fargate<br>(Amazon EKS)",
     },
     "f3_ec2": {"ja": "Amazon EC2", "en": "Amazon EC2"},
     "f3_lambda_in": {
         "ja": "AWS Lambda<br>(VPC 内)",
         "en": "AWS Lambda<br>(in a VPC)",
+    },
+    # --- figure 4: storage for pods isolated with Nitro Sandbox ---
+    "f4_cluster": {
+        "ja": "クラスタ(Kubernetes 1.36)",
+        "en": "Cluster (Kubernetes 1.36)",
+    },
+    "f4_eks": {
+        "ja": "Amazon EKS<br>(Auto Mode)",
+        "en": "Amazon EKS<br>(Auto Mode)",
+    },
+    "f4_normal": {
+        "ja": "通常の Pod<br>(2 本、別のノード)",
+        "en": "Normal pods<br>(two, on different nodes)",
+    },
+    "f4_isolated": {
+        "ja": "隔離 Pod<br>(isolated-sandbox)",
+        "en": "Isolated pod<br>(isolated-sandbox)",
+    },
+    "f4_nfs_pv": {
+        "ja": "PersistentVolume<br>(NFS、ReadWriteMany)",
+        "en": "PersistentVolume<br>(NFS, ReadWriteMany)",
+    },
+    "f4_trident": {
+        "ja": "NetApp Trident<br>(CSI ドライバ)",
+        "en": "NetApp Trident<br>(CSI driver)",
+    },
+    "f4_e_provision": {"ja": "払い出し", "en": "Provisions"},
+    "f4_ebs": {
+        "ja": "Amazon EBS<br>(ReadWriteOncePod)",
+        "en": "Amazon EBS<br>(ReadWriteOncePod)",
+    },
+    "f4_fsx": {
+        "ja": "Amazon FSx for<br>NetApp ONTAP",
+        "en": "Amazon FSx for<br>NetApp ONTAP",
+    },
+    "f4_e_ok": {"ja": "マウントできた", "en": "Mounted"},
+    "f4_e_fail": {"ja": "マウント失敗 ※1", "en": "Mount failed *1"},
+    "f4_e_nfs": {"ja": "NFS", "en": "NFS"},
+    "f4_notes": {
+        "ja": (
+            "<b>補足</b><br>"
+            "※1 <b>コンテナ作成の段階で失敗</b><br>"
+            "failed to fulfil mount request: ... no such file or directory。"
+            "約 6 分で再起動 5 回の CrashLoopBackOff。原因は切り分けていない。<br>"
+            "※2 <b>観測の範囲</b><br>"
+            "2026-11-10、ap-northeast-1、1 回の観測。Trident の EKS アドオン v26.6.2-eksbuild.1。"
+            "iSCSI と NVMe/TCP のブロックボリュームは試していない。<br>"
+            "※3 <b>ドキュメントの記載</b><br>"
+            "Storage with Nitro Sandboxes が挙げるのは Amazon EBS、Amazon EFS、tmpfs を使う CSI ドライバなど。"
+            "サードパーティの CSI ドライバの NFS には触れていない。<br>"
+            "※4 <b>アイコン</b><br>"
+            "Pod と PersistentVolume は Kubernetes コミュニティのアイコン(Apache-2.0)、"
+            "Trident は NetApp/trident リポジトリのロゴ。"
+            "AWS のアイコンパッケージに EKS Auto Mode 専用のアイコンは無いので、Amazon EKS のアイコンを使った。"
+        ),
+        "en": (
+            "<b>Notes</b><br>"
+            "*1 <b>Failed at container creation</b><br>"
+            "failed to fulfil mount request: ... no such file or directory, then "
+            "CrashLoopBackOff after 5 restarts in about 6 minutes. The cause was not isolated.<br>"
+            "*2 <b>Scope of the observation</b><br>"
+            "2026-11-10, ap-northeast-1, one observation. Trident EKS add-on "
+            "v26.6.2-eksbuild.1. iSCSI and NVMe/TCP block volumes were not tried.<br>"
+            "*3 <b>What the documentation lists</b><br>"
+            "Storage with Nitro Sandboxes lists Amazon EBS, Amazon EFS, tmpfs-backed CSI "
+            "drivers, and others. It does not mention NFS from third-party CSI drivers.<br>"
+            "*4 <b>Icons</b><br>"
+            "The pod and PersistentVolume icons are Kubernetes community icons (Apache-2.0); "
+            "the Trident logo is from the NetApp/trident repository. The AWS icon package "
+            "has no icon for EKS Auto Mode, so the Amazon EKS icon is used."
+        ),
     },
     "f3_notes": {
         "ja": (
@@ -457,8 +584,9 @@ LABELS: dict[str, dict[str, str]] = {
             "マネージドサービスは Internet origin、VPC 内のコンピュートは VPC origin。"
             "origin は作成後に変更できない。<br>"
             "※2 <b>描いていないものは「非対応」ではない</b><br>"
-            "AWS DataSync、AWS Backup、Amazon Macie、Amazon GuardDuty、AWS Storage Gateway などは、"
-            "公開された記載を見つけられなかった。本文の表に調べた範囲を書いた。<br>"
+            "Amazon Macie、Amazon GuardDuty、AWS Storage Gateway などは、アクセスポイント経由で使う"
+            "公開された記載を見つけられなかった。AWS DataSync と AWS Backup は FSx for ONTAP を"
+            "アクセスポイントを通さずに直接扱う(DataSync は NFS / SMB、AWS Backup はボリューム単位)。<br>"
             "※3 <b>根拠は行ごとに違う</b><br>"
             "AWS のドキュメント、本リポジトリや他のリポジトリでの実測、ベンダー公表の区別は本文の表にある。"
         ),
@@ -468,9 +596,10 @@ LABELS: dict[str, dict[str, str]] = {
             "Managed services need Internet origin; compute inside a VPC uses VPC origin. "
             "The origin cannot be changed after creation.<br>"
             "*2 <b>What is not drawn is not \"unsupported\"</b><br>"
-            "AWS DataSync, AWS Backup, Amazon Macie, Amazon GuardDuty, AWS Storage Gateway "
-            "and others: no public statement was found. The table in the text lists what "
-            "was searched.<br>"
+            "Amazon Macie, Amazon GuardDuty, AWS Storage Gateway and others: no public "
+            "statement of use through an access point was found. AWS DataSync and AWS Backup "
+            "work with FSx for ONTAP directly, without an access point (DataSync over NFS / "
+            "SMB, AWS Backup per volume).<br>"
             "*3 <b>The basis differs per row</b><br>"
             "The table in the text separates AWS documentation, measurements in this and "
             "other repositories, and vendor-published statements."
@@ -644,8 +773,8 @@ def _overview() -> Diagram:
         ),
         notes=(Note("notes", "f1_notes", 40, 620, 860, 260),),
         nodes=(
-            Node("ecs", "ecs", "f1_ecs", 70, 110),
-            Node("eks", "eks", "f1_eks", 70, 280),
+            Node("ecs", "fargate", "f1_ecs", 70, 110),
+            Node("eks", "fargate", "f1_eks", 70, 280),
             Node("endpoint", "vpc_endpoint", "f1_endpoint", 300, 296),
             Node("ap", "s3_access_point", "f1_ap", 470, 296),
             Node("fsx", "fsx_ontap", "f1_fsx", 650, 450),
@@ -743,13 +872,13 @@ def _consumer_map() -> Diagram:
         name="s3ap-consumer-map",
         diagram_id="s3ap-consumer-map",
         width=980,
-        height=870,
-        groups=(Group("aws_cloud", "aws_cloud", 10, 10, 960, 850),),
+        height=910,
+        groups=(Group("aws_cloud", "aws_cloud", 10, 10, 960, 890),),
         frames=(
             Frame("frame_internet", "f3_frame_internet", 340, 40, 620, 340),
             Frame("frame_vpc", "f3_frame_vpc", 340, 420, 620, 190),
         ),
-        notes=(Note("notes", "f3_notes", 30, 640, 920, 200),),
+        notes=(Note("notes", "f3_notes", 30, 640, 920, 240),),
         nodes=(
             Node("fsx", "fsx_ontap", "f3_fsx", 50, 60),
             Node("ap_internet", "s3_access_point", "f3_ap_internet", 240, 186),
@@ -761,8 +890,8 @@ def _consumer_map() -> Diagram:
             Node("transfer", "transfer", "f3_transfer", 360, 235),
             Node("cloudfront", "cloudfront", "f3_cloudfront", 510, 235),
             Node("lambda_out", "lambda", "f3_lambda_out", 660, 235),
-            Node("ecs", "ecs", "f3_ecs", 360, 475),
-            Node("eks", "eks", "f3_eks", 510, 475),
+            Node("ecs", "fargate", "f3_ecs", 360, 475),
+            Node("eks", "fargate", "f3_eks", 510, 475),
             Node("ec2", "ec2", "f3_ec2", 660, 475),
             Node("lambda_in", "lambda", "f3_lambda_in", 810, 475),
         ),
@@ -799,10 +928,96 @@ def _consumer_map() -> Diagram:
     )
 
 
+def _sandbox_storage() -> Diagram:
+    """What an isolated pod could mount, next to what normal pods could.
+
+    One observation: the Trident NFS volume that two normal pods mounted failed in a pod run with
+    `isolated-sandbox`, while an EBS volume mounted in that pod. Colour may not carry the failure
+    (single-colour arrows), so the edge label says it and the note gives the error text.
+
+    Every label sits under its icon, so no edge may leave an icon downwards: it would run through
+    the words. Each edge leaves from the right and turns down onto its target's top, and the icons
+    are staggered so that those horizontal runs cross nothing. The normal pods sit lower than the
+    isolated pod for that reason, not because they come later. FSx for ONTAP sits outside the
+    cluster frame because it is outside the cluster, and far enough right that the line down to it
+    clears the two-line label under the PersistentVolume.
+    """
+    return Diagram(
+        name="s3ap-sandbox-storage",
+        diagram_id="s3ap-sandbox-storage",
+        width=900,
+        height=1110,
+        groups=(Group("aws_cloud", "aws_cloud", 20, 20, 860, 1070),),
+        frames=(Frame("cluster", "f4_cluster", 40, 70, 820, 470),),
+        notes=(Note("notes", "f4_notes", 40, 735, 820, 335),),
+        nodes=(
+            Node("eks", "eks", "f4_eks", 70, 110),
+            Node("isolated", "k8s_pod", "f4_isolated", 330, 130),
+            Node("normal", "k8s_pod", "f4_normal", 150, 300),
+            Node("ebs", "ebs", "f4_ebs", 720, 260),
+            Node("trident", "trident", "f4_trident", 330, 420),
+            Node("nfs_pv", "k8s_pv", "f4_nfs_pv", 540, 420),
+            Node("fsx", "fsx_ontap", "f4_fsx", 740, 590),
+        ),
+        edges=(
+            Edge(
+                "e1",
+                "normal",
+                "nfs_pv",
+                "f4_e_ok",
+                exit_at=(1.0, 0.5),
+                entry_at=(0.25, 0.0),
+                label_at=-0.3,
+                label_offset=(0, -14),
+            ),
+            Edge(
+                "e2",
+                "isolated",
+                "nfs_pv",
+                "f4_e_fail",
+                exit_at=(1.0, 0.75),
+                entry_at=(0.75, 0.0),
+                label_at=-0.45,
+                label_offset=(0, 16),
+            ),
+            Edge(
+                "e3",
+                "isolated",
+                "ebs",
+                "f4_e_ok",
+                exit_at=(1.0, 0.25),
+                entry_at=(0.5, 0.0),
+                label_at=-0.2,
+                label_offset=(0, -14),
+            ),
+            Edge(
+                "e5",
+                "trident",
+                "nfs_pv",
+                "f4_e_provision",
+                exit_at=(1.0, 0.5),
+                entry_at=(0.0, 0.5),
+                label_offset=(0, -14),
+            ),
+            Edge(
+                "e4",
+                "nfs_pv",
+                "fsx",
+                "f4_e_nfs",
+                exit_at=(1.0, 0.5),
+                entry_at=(0.5, 0.0),
+                label_at=0.45,
+                label_offset=(26, 0),
+            ),
+        ),
+    )
+
+
 DIAGRAMS = (
     _overview(),
     _request_path(),
     _consumer_map(),
+    _sandbox_storage(),
 )
 
 # --- rendering -----------------------------------------------------------------------------------
@@ -872,6 +1087,17 @@ def data_uris(package: Path) -> dict[tuple[str, str], str]:
                 raise SystemExit(f"build_diagrams: {resolved} missing from {package}")
             encoded = base64.b64encode(path.read_bytes()).decode("ascii")
             uris[(key, theme)] = f"data:image/svg+xml,{encoded}"
+        for key, name in LOCAL_ICONS.items():
+            path = LOCAL_ICON_DIR / name
+            if not path.is_file():
+                raise SystemExit(
+                    f"build_diagrams: {name} not found at {path.relative_to(ROOT)}.\n"
+                    "  It is a third-party mark and is deliberately not committed. Fetch it with:\n"
+                    f"  curl -sSf -o {path.relative_to(ROOT)} {LOCAL_ICON_URLS[key]}"
+                )
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            mime = MIME_BY_SUFFIX[path.suffix.lower()]
+            uris[(key, theme)] = f"data:{mime},{encoded}"
     return uris
 
 
@@ -980,7 +1206,8 @@ def render(
         vertex(
             node.cid,
             label(node.label, lang),
-            icon_style(uris[(node.icon, theme)], p.ink),
+            icon_style(uris[(node.icon, theme)], p.ink)
+            + ("imageBackground=#FFFFFF;" if theme == "dark" and node.icon in PLATED_ICONS else ""),
             node.x,
             node.y,
             size,

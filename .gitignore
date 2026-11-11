@@ -33,3 +33,7 @@ node_modules/
 # Filled-in CloudFormation parameter copies (keep only *.example.json)
 params/*.json
 !params/*.example.json
+
+# Third-party icons (Kubernetes community icons) are embedded into the generated .drawio and never
+# committed as files of their own. See LOCAL_ICONS in tools/build_diagrams.py.
+docs/_assets/icons/

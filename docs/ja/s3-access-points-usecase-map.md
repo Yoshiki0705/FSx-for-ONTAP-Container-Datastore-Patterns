@@ -162,7 +162,7 @@ SnapMirror の宛先ボリュームから分析する使い方について、AWS
 
 ## 7. 連携先の地図
 
-![図 3: アクセスポイントの origin ごとの連携先。Amazon FSx for NetApp ONTAP から、Internet origin の S3 Access Points と VPC origin の S3 Access Points に分かれ、Internet origin には Amazon Athena、AWS Glue、Amazon EMR、Amazon Bedrock、AWS Transfer Family、Amazon CloudFront、VPC 外の AWS Lambda、VPC origin には Amazon ECS、Amazon EKS、Amazon EC2、VPC 内の AWS Lambda がつながる](../_assets/images/s3ap-consumer-map.svg)
+![図 3: アクセスポイントの origin ごとの連携先。Amazon FSx for NetApp ONTAP から、Internet origin の S3 Access Points と VPC origin の S3 Access Points に分かれ、Internet origin には Amazon Athena、AWS Glue、Amazon EMR、Amazon Bedrock、AWS Transfer Family、Amazon CloudFront、VPC 外の AWS Lambda、VPC origin には AWS Fargate(Amazon ECS と Amazon EKS)、Amazon EC2、VPC 内の AWS Lambda がつながる](../_assets/images/s3ap-consumer-map.svg)
 
 図 3: 連携先を origin で分けた地図。図に描いたのは、AWS の文書か実測で origin が分かっているサービスである。制約(Athena は読み取りのみ、EMR の Iceberg 書き込みは不可など)と、図に無いサービスは 7.1〜7.5 の表にある。
 
@@ -213,7 +213,9 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 
 ### 7.5 公開された言及が見つからなかったもの
 
-次は「非対応」ではなく、調べた範囲で公開された記述が無かったものである。AWS DataSync(S3 ロケーションのページがアクセスポイントに触れるのは S3 on Outposts のみ)、AWS Backup、Amazon Macie と Amazon GuardDuty Malware Protection for S3(どちらのドキュメントも汎用バケットを前提にしている)、AWS Storage Gateway、Amazon OpenSearch Service(Bedrock のベクトルストアとしてのみ)、Amazon Comprehend、Amazon Rekognition。
+AWS DataSync と AWS Backup は FSx for ONTAP そのものに対応しており、アクセスポイントを通らずに使う。DataSync は FSx for ONTAP のロケーションを作り、SVM を NFS(v3)か SMB でマウントして転送する([DataSync のユーザーガイド](https://docs.aws.amazon.com/datasync/latest/userguide/create-ontap-location.html))。AWS Backup はボリューム単位でバックアップを取り([AWS News Blog、2022-05](https://aws.amazon.com/blogs/aws/aws-backup-now-supports-amazon-fsx-for-netapp-ontap/))、2026-09 からは論理的にエアギャップされたボールトにも保存できる([What's New](https://aws.amazon.com/about-aws/whats-new/2026/09/aws-backup-air-gapped-vault-fsx-ontap/))。調べた範囲で見つからなかったのは、アクセスポイントを S3 のロケーションやバックアップ対象に指定する記述で、DataSync の S3 ロケーションのページがアクセスポイントに触れるのは S3 on Outposts だけだった。
+
+次は「非対応」ではなく、調べた範囲で、アクセスポイント経由で使うという公開された記述が無かったものである。Amazon Macie と Amazon GuardDuty Malware Protection for S3(どちらのドキュメントも汎用バケットを前提にしている)、AWS Storage Gateway、Amazon OpenSearch Service(Bedrock のベクトルストアとしてのみ)、Amazon Comprehend、Amazon Rekognition。
 
 ---
 
@@ -248,11 +250,15 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 
 ## 9. コンテナでの実機確認と、隔離 Pod との組み合わせ
 
-![図 1: コンテナから S3 Access Points を通って FSx for ONTAP のボリュームまでの経路。Amazon ECS と Amazon EKS(どちらも AWS Fargate)が S3 Gateway エンドポイントから S3 Access Points(VPC origin)を呼び、Amazon FSx for NetApp ONTAP のボリュームに至る。Amazon EC2 は NFS / SMB で同じボリュームを使う](../_assets/images/s3ap-container-overview.svg)
+![図 1: コンテナから S3 Access Points を通って FSx for ONTAP のボリュームまでの経路。AWS Fargate 上の Amazon ECS と Amazon EKS が S3 Gateway エンドポイントから S3 Access Points(VPC origin)を呼び、Amazon FSx for NetApp ONTAP のボリュームに至る。Amazon EC2 は NFS / SMB で同じボリュームを使う](../_assets/images/s3ap-container-overview.svg)
 
 図 1: コンテナがボリュームに到達する経路。
 
 2026-11-10 に ap-northeast-1 で、使い捨ての SVM とボリュームに対し、Fargate の ECS と EKS(1.35)から読み書きと一覧を確認した [実測: 本リポジトリ]。alias と ARN の両方で通り、書き込み前後の sha256 が一致した。NFS 側から見たときの可視性、`ec2-user` での FAILED、非 root ユーザーでの権限、撤収後の基線との一致を含む全結果は、[storage-verification の 5.4](atx-containerization-fsxn-storage-verification.md) にある。見つけた不具合 2 件(ポリシーの `Resource`、ID の既定値)は、テンプレートで直してある。
+
+![図 4: Amazon EKS Auto Mode のクラスタで、通常の Pod 2 本は NetApp Trident の NFS の PersistentVolume をマウントでき、isolated-sandbox の隔離 Pod は同じ PersistentVolume のマウントに失敗し、Amazon EBS はマウントできた。NFS の PersistentVolume は Amazon FSx for NetApp ONTAP にある](../_assets/images/s3ap-sandbox-storage.svg)
+
+図 4: 隔離 Pod でマウントできたストレージと、できなかったストレージ。Pod と PersistentVolume のアイコンは [Kubernetes コミュニティのアイコン](https://github.com/kubernetes/community/tree/main/icons)(Apache-2.0)、Trident のロゴは [NetApp/trident](https://github.com/NetApp/trident) リポジトリのもの
 
 **EKS の隔離 Pod(Nitro Sandbox)では、Trident の NFS の PV が使えなかった。** コンテナ作成の段階で失敗し、EBS の PVC は使えた(1 回の観測)。FSx for ONTAP のデータを隔離 Pod で使う選択肢としては、アクセスポイント経由で S3 SDK から読む形もありうる。ただし隔離 Pod からアクセスポイントを呼ぶ構成は、確かめていない [未測定]。観測の詳細は [storage-verification の 9.1](atx-containerization-fsxn-storage-verification.md) にある。サードパーティ CSI の扱いの明記を[文書フィードバック](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259)で、NFS とブロックの対応を機能要望([NFS](https://github.com/aws/containers-roadmap/issues/2911)、[ブロック](https://github.com/aws/containers-roadmap/issues/2912))で公開した。issue の提出は、AWS が受理や優先付けをしたことを意味しない。
 
