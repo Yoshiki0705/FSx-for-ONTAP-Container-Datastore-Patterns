@@ -140,6 +140,8 @@ FSx for ONTAP S3 Access Points let you read/write volume data through the S3 obj
 
 Supported regions include Tokyo (ap-northeast-1) [Documented].
 
+The use cases of access points, how to choose the origin, and the check status of integrations with AWS services and SaaS products are in [Use cases and integrations for S3 Access Points](s3-access-points-usecase-map.md). This memo is where the measurements live.
+
 ### 5.2 CloudFormation design
 
 - The FSx for ONTAP S3 access point can be created with the CloudFormation resource `AWS::FSx::S3AccessPointAttachment` (not CLI-only). Set the network origin to VPC and specify the UNIX user that authorizes file access.

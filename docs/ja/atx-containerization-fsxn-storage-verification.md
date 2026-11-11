@@ -140,6 +140,8 @@ FSx for ONTAP の S3 Access Points は、ボリュームのデータを S3 オ�
 
 対応リージョンに東京(ap-northeast-1)が含まれる [文書]。
 
+アクセスポイントの用途、origin の選び方、AWS のサービスや SaaS との連携の確認状況は、[S3 Access Points の利用シナリオと連携先の地図](s3-access-points-usecase-map.md)にまとめた。この文書は実測の置き場である。
+
 ### 5.2 CloudFormation の設計
 
 - FSx for ONTAP の S3 Access Point は CloudFormation リソース `AWS::FSx::S3AccessPointAttachment` で作成できる(CLI 専用ではない)。ネットワーク origin を VPC にし、ファイルアクセスを認可する UNIX ユーザーを指定する。

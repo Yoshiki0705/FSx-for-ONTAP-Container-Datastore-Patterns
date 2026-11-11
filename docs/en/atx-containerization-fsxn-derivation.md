@@ -299,7 +299,7 @@ ONTAP block / file split (section 5) [Documented, general reasoning].
 | Workloads that require block | Database data areas, middleware that assumes a raw block device, dedicated volumes per StatefulSet replica, and workloads demanding dedicated IOPS. Each suits block (mostly RWO) rather than a file share (RWX) (consistent with section 5) |
 | Targets that treat VM disks as block | OpenShift Virtualization / KubeVirt commonly handle VM disks as block PVCs, creating demand to convert a disk moved as a file into a block LUN on landing |
 
-The use cases are shown as types, not specific customer cases. Because file-to-LUN is a preview
+The use cases are shown as types, not cases of specific organizations. Because file-to-LUN is a preview
 feature, confirming its hands-on behavior and the workloads it fits requires hands-on
 verification (C5 / C6 in 10.4).
 

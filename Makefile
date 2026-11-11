@@ -60,8 +60,29 @@ ai-style: ## AI 調の兆候を検査（fail tier で落とす。先に件数表
 test: ## ai-style 検出器の stdlib unittest
 	$(PYTHON) -m unittest tools.test_ai_style
 
+.PHONY: diagram-fonts
+diagram-fonts: ## 図のラベルが可読性の下限を満たすか（自己テストを先に走らせる）
+	@$(PYTHON) tools/check_diagram_fonts.py --selftest >/dev/null
+	@$(PYTHON) tools/check_diagram_fonts.py
+
+.PHONY: diagram-flow
+diagram-flow: ## 図が右と下へ読めるか、ラベルがアイコンの下にあるか
+	@$(PYTHON) tools/check_diagram_flow.py --selftest >/dev/null
+	@$(PYTHON) tools/check_diagram_flow.py
+
+# 次の 2 つは gates に入れない。AWS Architecture Icons のパッケージ（四半期ごとの配布、
+# コミットしない）と draw.io CLI が要るため。コミットするのは生成物の .drawio と書き出した画像で、
+# 上の 2 つの検査はそれを読む。
+.PHONY: diagrams
+diagrams: ## .drawio を再生成し SVG と PNG を書き出す（AWS アイコンのパッケージが要る）
+	@$(PYTHON) tools/build_diagrams.py --write --export
+
+.PHONY: diagrams-check
+diagrams-check: ## コミット済みの図が仕様と一致するか（AWS アイコンのパッケージが要る）
+	@$(PYTHON) tools/build_diagrams.py --check
+
 .PHONY: gates
-gates: cfn-lint headings role-labels ai-style test ## どこでも走る検査（CI とフックが呼ぶ）
+gates: cfn-lint headings role-labels diagram-fonts diagram-flow ai-style test ## どこでも走る検査（CI とフックが呼ぶ）
 
 .PHONY: ci
 ci: gates ## CI が呼ぶ集約ターゲット

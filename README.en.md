@@ -49,6 +49,7 @@ Fargate cannot use FSx for ONTAP through a volume mount, so it uses object acces
 
 - [Containerization Derivation and FSx for ONTAP Integration](docs/en/atx-containerization-fsxn-derivation.md)
 - [Verifying FSx for ONTAP Data Store Configurations on Container Targets](docs/en/atx-containerization-fsxn-storage-verification.md). Prerequisites, order, pitfalls, and cleanup for real deployment are in [7.1 Deployment prerequisites](docs/en/atx-containerization-fsxn-storage-verification.md#71-deployment-prerequisites-the-stage-before-hands-on-verification). The effect of the October–November 2026 EKS updates (Nitro Sandbox, DRA in Auto Mode, Trident 26.10 and Kubernetes 1.37) is in chapter 9
+- [Use cases and integrations for S3 Access Points](docs/en/s3-access-points-usecase-map.md). How it maps to on-premises ONTAP, use cases for new and existing users, and the check status per AWS service and SaaS product
 - [Mounting FSx for ONTAP on ECS on EC2](docs/en/ecs-ec2-fsxn-mount.md)
 - [CloudFormation parameter files](params/README.md) — which placeholder values to replace, how to obtain each, and how to reuse an existing cluster or storage class
 

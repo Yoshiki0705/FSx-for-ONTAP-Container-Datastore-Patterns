@@ -124,7 +124,7 @@ Trident は EKS クラスタに対して**ブロックとファイルの両方�
 
 **運用上の注意(対称に記載)**:
 
-- iSCSI(`ontap-san`)を使う場合、ノードのマルチパス設定が Amazon EBS CSI ドライバと競合しうる。`multipath.conf` で EBS デバイスを blacklist する必要がある(出典: 上記 EKS ユーザーガイドおよび Trident ドキュメント両方に記載)。
+- iSCSI(`ontap-san`)を使う場合、ノードのマルチパス設定が Amazon EBS CSI ドライバと衝突しうる。`multipath.conf` で EBS デバイスを blacklist する必要がある(出典: 上記 EKS ユーザーガイドおよび Trident ドキュメント両方に記載)。
 - SMB ボリュームは `ontap-nas` ドライバのみ、Windows ノードのみで、Trident EKS アドオンでは非対応。
 - NVMe-oF は Trident 25.02 のテスト対象に含まれていない [文書]。
 
@@ -233,7 +233,7 @@ D フェーズ(本リポジトリでは文献調査)の結論として、コン�
 1. **コンテナ化**: AWS Transform でソースコードをコンテナ化し、ECR へ publish、EKS(EC2 ワーカーノード)へデプロイ。
 2. **CSI 導入**: EKS クラスタに NetApp Trident を導入(Helm または AWS 検証済み EKS アドオン)。FSx for ONTAP のファイルシステムと SVM、認証情報(Secrets Manager)を用意。
 3. **PV 構成**: 用途に応じて `ontap-nas`(NFS / 共有)または `ontap-san`(iSCSI / 専用)の StorageClass を作り、アプリの PVC から要求する。
-4. **検証**: データ整合性、フェイルオーバー時の挙動、iSCSI 使用時の EBS multipath 競合の回避を確認。
+4. **検証**: データ整合性、フェイルオーバー時の挙動、iSCSI 使用時の EBS multipath の衝突の回避を確認。
 
 この経路は EC2 リホストの検証(既存)とは別のリポジトリ / Kiro プロジェクトに分割する余地がある。理由は、(a) 対象が VMware VM ではなくソースコードであること、(b) 検証に EKS クラスタと Trident という別のスタックが要ること、(c) FSx for ONTAP の到達形態が iSCSI ゲストマウントから CSI PV へ変わること。分割の是非は、実機検証で実現性を確認してから判断する。
 
@@ -299,7 +299,7 @@ MGN とは成熟度が異なるため、設計の前提に据える場合はこ�
 | ブロックを要求するワークロード | データベースのデータ領域、raw ブロックデバイスを前提とするミドルウェア、StatefulSet 各レプリカの専用ボリューム、専用 IOPS を要求する処理。いずれもファイル共有(RWX)ではなくブロック(RWO 中心)が適する(5 章の区分と整合) |
 | VM ディスクをブロックとして扱う移行先 | OpenShift Virtualization / KubeVirt は VM ディスクをブロック PVC で扱うのが一般的で、ファイルとして運んだディスクをブロック LUN へ変換して着地させる需要がある |
 
-ユースケースは特定顧客の事例ではなく類型として示す。file-to-LUN は Preview 機能のため、実機
+ユースケースは特定の組織の事例ではなく類型として示す。file-to-LUN は Preview 機能のため、実機
 挙動と適合するワークロードの確定は実機検証を要する(10.4 の C5 / C6)。
 
 ### 10.3 コンテナのデータストアとの接続(2 段階移行)[文書]
