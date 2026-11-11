@@ -151,7 +151,7 @@ In both cases the container runtime does not mount FSx directly; rather, **the h
 |---|---|---|
 | EKS Fargate | Cannot use DaemonSets, privileged Pods, or HostNetwork / HostPort. Trident is designed to run a node pod (DaemonSet) on each worker node, so it cannot start on Fargate | [Simplify compute management with AWS Fargate](https://docs.aws.amazon.com/eks/latest/userguide/fargate.html), [Trident architecture](https://docs.netapp.com/us-en/trident/trident-get-started/architecture.html) |
 | EKS Fargate (other storage) | The EFS CSI driver supports no dynamic provisioning on Fargate, only static. The EBS CSI controller can run on Fargate, but its node DaemonSet runs only on EC2. The persistent option usable on Fargate is limited to EFS (static) | [Amazon EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html), [Amazon EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) |
-| ECS Fargate | Task definitions support only bind mount host volumes and EFS volumes. `dockerVolumeConfiguration` is unsupported. FSx for ONTAP is not among the supported volume types | [Amazon ECS task definition differences for Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html) |
+| ECS Fargate | The volumes Fargate supports are Amazon EBS, Amazon EFS, Amazon S3 Files, and bind mounts. `dockerVolumeConfiguration` (Docker volumes) is EC2 only. A native FSx for ONTAP mount is EC2 only, and AWS says Fargate uses FSx for ONTAP through S3 Access Points (checked 2026-11-11) | [Storage options for Amazon ECS tasks](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_data_volumes.html), [Amazon ECS task definition differences for Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html) |
 
 Thus "the AWS Transform ECS deployment is Fargate-capable (3.3)" and "Fargate cannot use FSx for ONTAP (this section)" are both true. **If you take the operational simplicity of Fargate you cannot attach FSx for ONTAP; if you want FSx for ONTAP persistent volumes you choose EKS EC2 worker nodes (or the ECS EC2 launch type)**. That is the trade-off.
 
@@ -180,7 +180,7 @@ Legend: **NFS PV** = Trident `ontap-nas` / **iSCSI PV** = Trident `ontap-san` / 
 |---|---|---|---|---|---|
 | Database (dedicated disk required) | iSCSI (guest) [Tested] | iSCSI PV / NFS PV [Documented] | ✕ (no CSI) [Documented] | host NFS [Documented] | ✕ (cannot attach) [Documented] |
 | Stateful .NET / Java app (single writer) | iSCSI (guest) [Documented] | iSCSI PV [Documented] | ✕ [Documented] | host NFS [Documented] | ✕ [Documented] |
-| Horizontally scaled web app with shared data | iSCSI (guest) [Documented] | NFS PV (RWX) [Documented] | ✕ [Documented] | host NFS [Documented] | ✕ (EFS only) [Documented] |
+| Horizontally scaled web app with shared data | iSCSI (guest) [Documented] | NFS PV (RWX) [Documented] | ✕ [Documented] | host NFS [Documented] | ✕ (shared: EFS or S3 Files) [Documented] |
 | Stateless web / API | Rarely applicable (no data) | Optional (unused if not needed) | No persistence needed [Documented] | Optional | Fargate fits (no persistence needed) [Documented] |
 | Windows / SMB-dependent app | iSCSI (guest) [Documented] | SMB PV (Windows nodes) [Documented] | ✕ [Documented] | host SMB (Windows EC2) [Documented] | ✕ [Documented] |
 

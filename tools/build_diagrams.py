@@ -290,8 +290,6 @@ LABELS: dict[str, dict[str, str]] = {
         "en": "Amazon FSx for<br>NetApp ONTAP",
     },
     "f1_ec2": {"ja": "Amazon EC2<br>(NFS / SMB)", "en": "Amazon EC2<br>(NFS / SMB)"},
-    "f1_e_task": {"ja": "タスクロール", "en": "Task role"},
-    "f1_e_pod": {"ja": "IRSA", "en": "IRSA"},
     "f1_e_api": {"ja": "S3 API", "en": "S3 API"},
     "f1_e_nfs": {"ja": "NFS / SMB", "en": "NFS / SMB"},
     "f1_notes": {
@@ -299,24 +297,30 @@ LABELS: dict[str, dict[str, str]] = {
             "<b>補足</b><br>"
             "※1 <b>コンテナにファイルのマウントは無い</b><br>"
             "アプリが S3 SDK で、アクセスポイントの alias か ARN を指定して呼ぶ。"
-            "Fargate は、ボリュームのマウントでは FSx for ONTAP を使えない。<br>"
+            "AWS Fargate からは S3 Access Points 経由で使うと、Amazon ECS のドキュメントが書く。<br>"
             "※2 <b>VPC origin は VPC の外からの要求を拒否する</b><br>"
             "Amazon Athena や Amazon Bedrock などには Internet origin が要る(図 2、図 3)。"
             "origin は作成後に変更できない。<br>"
             "※3 <b>NFS / SMB のクライアントは従来どおり</b><br>"
-            "アクセスポイントを付けても、ボリュームの NFS / SMB の動作は変わらない。"
+            "アクセスポイントを付けても、ボリュームの NFS / SMB の動作は変わらない。<br>"
+            "※4 <b>認証はコンテナ側の IAM ロール</b><br>"
+            "Amazon ECS はタスクロール、Amazon EKS は IRSA。アクセスポイントは VPC の中に置くものではなく、"
+            "VPC origin で受け付ける VPC を指定する。"
         ),
         "en": (
             "<b>Notes</b><br>"
             "*1 <b>Containers have no file mount</b><br>"
-            "The app calls the S3 SDK with the access point alias or ARN. Fargate cannot "
-            "use FSx for ONTAP through a volume mount.<br>"
+            "The app calls the S3 SDK with the access point alias or ARN. The Amazon ECS "
+            "documentation says AWS Fargate uses FSx for ONTAP through S3 Access Points.<br>"
             "*2 <b>VPC origin refuses requests from outside the VPC</b><br>"
             "Services such as Amazon Athena and Amazon Bedrock need Internet origin "
             "(Figures 2 and 3). The origin cannot be changed after creation.<br>"
             "*3 <b>NFS / SMB clients are unchanged</b><br>"
             "Attaching an access point does not change how the volume behaves over NFS "
-            "or SMB."
+            "or SMB.<br>"
+            "*4 <b>Authentication is the container's IAM role</b><br>"
+            "Amazon ECS uses a task role and Amazon EKS uses IRSA. The access point is not "
+            "placed inside the VPC; VPC origin names the VPC it accepts."
         ),
     },
     # --- figure 2: four gates and the origin choice ---
@@ -347,11 +351,11 @@ LABELS: dict[str, dict[str, str]] = {
     },
     "f2_vpc": {
         "ja": (
-            "<b>VPC origin</b><br>Fargate の Amazon ECS と Amazon EKS、<br>"
+            "<b>VPC origin</b><br>AWS Fargate の Amazon ECS と Amazon EKS、<br>"
             "VPC 内の Amazon EC2 と AWS Lambda<br>S3 の Gateway エンドポイントを通る"
         ),
         "en": (
-            "<b>VPC origin</b><br>Amazon ECS and Amazon EKS on Fargate,<br>"
+            "<b>VPC origin</b><br>Amazon ECS and Amazon EKS on AWS Fargate,<br>"
             "Amazon EC2 and AWS Lambda in the VPC<br>Traffic goes through an S3 gateway endpoint"
         ),
     },
@@ -373,7 +377,7 @@ LABELS: dict[str, dict[str, str]] = {
         "ja": (
             "<b>補足</b><br>"
             "※1 <b>origin は呼び出し元から逆算する</b><br>"
-            "Fargate とマネージドサービスの両方から同じボリュームを使うなら、<br>"
+            "AWS Fargate とマネージドサービスの両方から同じボリュームを使うなら、<br>"
             "origin の違うアクセスポイントを分けて作る。<br>"
             "※2 <b>ID は 1 つで、要求者ごとの ACL は評価されない</b><br>"
             "ID が SVM で解決できないと、作成 API が成功したあとに FAILED になる(実測、2026-11-10)。<br>"
@@ -383,7 +387,7 @@ LABELS: dict[str, dict[str, str]] = {
         "en": (
             "<b>Notes</b><br>"
             "*1 <b>Work back from the caller to the origin</b><br>"
-            "To use one volume from Fargate and from managed services, create separate "
+            "To use one volume from AWS Fargate and from managed services, create separate "
             "access points with different origins.<br>"
             "*2 <b>One identity; per-requester ACLs are not evaluated</b><br>"
             "If the SVM cannot resolve the identity, the access point goes to FAILED after "
@@ -623,9 +627,9 @@ def _overview() -> Diagram:
         name="s3ap-container-overview",
         diagram_id="s3ap-container-overview",
         width=940,
-        height=870,
+        height=920,
         groups=(
-            Group("aws_cloud", "aws_cloud", 20, 20, 900, 830),
+            Group("aws_cloud", "aws_cloud", 20, 20, 900, 880),
             Group(
                 "region",
                 "aws_region",
@@ -638,7 +642,7 @@ def _overview() -> Diagram:
                 dashed=True,
             ),
         ),
-        notes=(Note("notes", "f1_notes", 40, 620, 860, 210),),
+        notes=(Note("notes", "f1_notes", 40, 620, 860, 260),),
         nodes=(
             Node("ecs", "ecs", "f1_ecs", 70, 110),
             Node("eks", "eks", "f1_eks", 70, 280),
@@ -652,7 +656,7 @@ def _overview() -> Diagram:
                 "e1",
                 "ecs",
                 "endpoint",
-                "f1_e_task",
+                "f1_e_api",
                 exit_at=(1.0, 0.5),
                 entry_at=(0.5, 0.0),
                 label_offset=(0, -14),
@@ -661,7 +665,7 @@ def _overview() -> Diagram:
                 "e2",
                 "eks",
                 "endpoint",
-                "f1_e_pod",
+                "f1_e_api",
                 exit_at=(1.0, 0.5),
                 entry_at=(0.0, 0.5),
                 label_offset=(0, -14),

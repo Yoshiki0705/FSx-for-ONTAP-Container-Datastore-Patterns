@@ -40,6 +40,7 @@ AI エージェントや初見の読者は、次の 6 点を先に確認する�
 | origin | アクセスポイントを呼べるネットワークの範囲。VPC origin は指定した VPC から、Internet origin は VPC の外からも受け付ける。どちらも SigV4 が要る |
 | ファイルシステムの ID | アクセスポイントに固定した UNIX か Windows のユーザー。すべての S3 要求は、このユーザーの権限でファイルを操作する |
 | NAS バケット | オンプレミスの ONTAP S3 で、NAS ボリュームのディレクトリをバケットとして見せる仕組み(ONTAP 9.12.1 以降) |
+| Hub / 他の Spoke | Hub は FSx for ONTAP の判断の指針を置く [FSx-for-ONTAP-Adoption-Playbook](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook)。他の Spoke は、同じ作者が実機の検証を置く別のリポジトリ(サーバーレス、データレイク、S3 Burst など)。リンク先に環境と日付がある |
 
 ---
 
@@ -88,7 +89,7 @@ AI エージェントや初見の読者は、次の 6 点を先に確認する�
 | チェックサム | 9.20.1 以降で保存して返す | アップロード時に検証するが、保存せず返さない |
 | 保護 | 非同期のボリューム SnapMirror。同期とSVM-DR は対象外 | FSx の機能(バックアップ、SnapMirror)。途中のマルチパートは対象外 |
 
-**要求者ごとの権限判定は、AWS 側には引き継がれない。** オンプレミスで S3 ユーザーごとに NAS の権限を効かせていた設計は、アクセスポイントを要求者や権限の単位で分けて作り直す。AWS 側の仕組みが NAS バケットと同じ実装の上にあるかは、AWS と NetApp のどちらの文書にも書かれていない。この文書では「同じ未対応の機能が並ぶ」ことを事実とし、実装の関係は仮説に留める [仮説]。
+**要求者ごとの権限判定は、AWS 側には引き継がれない。** オンプレミスで S3 ユーザーごとに NAS の権限を適用していた設計は、アクセスポイントを要求者や権限の単位で分けて作り直す。AWS 側の仕組みが NAS バケットと同じ実装の上にあるかは、AWS と NetApp のどちらの文書にも書かれていない。この文書では「同じ未対応の機能が並ぶ」ことを事実とし、実装の関係は仮説に留める [仮説]。
 
 ---
 
@@ -103,9 +104,9 @@ AI エージェントや初見の読者は、次の 6 点を先に確認する�
 | ファイルの自動処理(サムネイル、文字抽出、文字起こし) | 共有に置かれるコンテンツ | AWS Lambda が読み書きする | Lambda を VPC の外に置くか、VPC origin で VPC に入れるか | [文書]([Lambda のチュートリアル](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/tutorial-process-files-with-lambda.html)) |
 | 外部の相手向けの SFTP / FTPS / FTP | 社内は SMB / NFS、相手は SFTP | AWS Transfer Family が alias でボリュームを読み書きする | Internet origin、alias のみ、ホームディレクトリは S3 API で作る | [文書]([Transfer Family](https://docs.aws.amazon.com/transfer/latest/userguide/fsx-s3-access-points.html))、[公表]([AWS Storage Blog](https://aws.amazon.com/blogs/storage/secure-sftp-file-sharing-with-aws-transfer-family-amazon-fsx-for-netapp-ontap-and-s3-access-points/)、2026-03) |
 | 移行先のファイルシステムを、あとから S3 の利用者を足す前提で作る | オンプレミスの NAS からの移行 | 同じファイルシステムが、移行したアプリに NFS / SMB を、新しい利用者に S3 API を出す | ボリュームごとのセキュリティスタイル、AD 参加、スループットを NAS と S3 の合計で見積もる、ボリューム数の余裕 | [公表]([What's New](https://aws.amazon.com/about-aws/whats-new/2025/12/amazon-fsx-netapp-ontap-s3-access/))、[文書]([AWS](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/s3-ap-manage-access-fsxn.html)) |
-| コンテナが共有の参照データを読む | ECS / EKS(EC2 と Fargate) | S3 SDK で alias を呼ぶ。マウントが無い | タスクロールか IRSA、VPC origin と Gateway エンドポイント | [公表](AWS News Blog に 1 文)、[実測: 本リポジトリ](storage-verification の 5.4) |
+| コンテナが共有の参照データを読む | ECS / EKS(EC2 と Fargate) | S3 SDK で alias を呼ぶ。マウントが無い | タスクロールか IRSA、VPC origin と Gateway エンドポイント | [文書]([ECS のストレージ](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_data_volumes.html)、ECS のみ)、[公表](AWS News Blog)、[実測: 本リポジトリ](storage-verification の 5.4) |
 
-**新規ユーザーが最初に決める 3 つ。** (1) ボリュームのセキュリティスタイルと ID の種別(UNIX と Windows)、(2) 呼び出し元ごとの origin、(3) ボリューム数。アクセスポイントを使うと、1 ファイルシステムあたりの最大ボリューム数が 500 から 491 に下がる [文書]([クォータ](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/limits.html))。
+**新規ユーザーが最初に決める 3 つ。** (1) ボリュームのセキュリティスタイルと ID の種別(UNIX と Windows)、(2) 呼び出し元ごとの origin、(3) ボリューム数。アクセスポイントを使うと、1 ファイルシステムあたりの最大ボリューム数が下がる。第 1 世代と、第 2 世代の HA ペア 1 組は 500 から 491、第 2 世代の HA ペア 2 組は 1,000 から 975、12 組では 903 になる [文書]([クォータ](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/limits.html)、2026-11-11 に確認)。
 
 ---
 
@@ -125,7 +126,7 @@ AWS のドキュメントは、アクセスポイントを付けても、ボリ�
 | 定期同期のパイプライン(ナレッジベースの同期、クローラ、バッチの ETL) | 旧アプリが一定時刻に書くファイル | [文書]。S3 のイベント通知は使えないので、読み取り側が時刻で動く |
 | Lambda やコンテナを、旧アプリのそばで動かす | 段階的なモダナイゼーション | [文書](Lambda)、[実測: 本リポジトリ](Fargate の ECS / EKS) |
 
-SnapMirror の宛先ボリュームから分析する、という使い方は、AWS が「データ保護ボリュームにもジャンクションパスがあればアクセスポイントを付けられる」と書くだけである。SnapMirror の切り替え後や復元後の挙動は、公開された記述を見つけられなかった [仮説]。
+SnapMirror の宛先ボリュームから分析する使い方について、AWS は「データ保護ボリュームにもジャンクションパスがあればアクセスポイントを付けられる」と書く [文書]。SnapMirror の切り替え後や復元後のアクセスポイントの挙動は、公開された記述を見つけられず、どのリポジトリでも試していない [未測定]。
 
 ### 6.2 アタッチ前の確認項目
 
@@ -134,15 +135,28 @@ SnapMirror の宛先ボリュームから分析する、という使い方は、
 | 1 | ONTAP が 9.17.1 以上か。既存のファイルシステムが 9.17.1 になる方法は、2025-12-02 の発表にある「次回のメンテナンスウィンドウ」の 1 文しか見つからなかった | [文書]([制約](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/access-point-for-fsxn-restrictions-limitations-naming-rules.html))、[公表] |
 | 2 | ボリュームがマウントされているか(ジャンクションパス)。オフラインやアンマウントになると MISCONFIGURED になる | [文書] |
 | 3 | SVM で S3 プロトコルが許可されているか | [文書] |
-| 4 | 指定する ID が ONTAP で解決できるか。UNIX はネームサービスの設定(ローカル、LDAP)、Windows は参加した AD で確かめる。解決できなければ FAILED か MISCONFIGURED になる | [文書]、[実測: 本リポジトリ](`ec2-user` で FAILED) |
+| 4 | 指定する ID が ONTAP で解決できるか。UNIX はネームサービスの設定(ローカル、LDAP)、Windows は参加した AD で確かめる。解決できなければ FAILED か MISCONFIGURED になる | [文書]、[実測: 本リポジトリ](`ec2-user` で FAILED。本リポジトリで試した ID は UNIX のみ) |
+| 4a | SVM が AD に参加している場合、AD のドメインコントローラに到達できるか。到達できないと、ListObjectsV2、GetObject、PutObject が AccessDenied になる一方、HeadBucket は成功するので、HeadBucket は健全性の確認に使えない | [実測: 他の Spoke]([AD 参加 SVM の前提](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/en/ad-joined-svm-s3ap-prerequisites.md)) |
 | 5 | ID の種別がボリュームのセキュリティスタイルに合っているか(UNIX スタイルに UNIX、NTFS に Windows) | [文書] |
-| 6 | 既存の共有・エクスポートの制御の扱い。SMB の共有権限は S3 経路に効かず、ファイル / フォルダの NTFS ACL だけが効くと AWS のブログは書く。NFS のエクスポートポリシーとの関係は、公開された記述を見つけられなかった | [公表] |
+| 6 | 既存の共有・エクスポートの制御の扱い。SMB の共有権限は S3 経路に適用されず、ファイル / フォルダの NTFS ACL だけが適用されると AWS のブログは書く(本リポジトリでは Windows の ID を試していない)。NFS のエクスポートポリシーとの関係は、公開された記述を見つけられなかった | [公表] |
 | 7 | スループットの余裕。S3 の要求はファイルシステムのスループットを使い、超えると `503 Slow Down` などで返る | [文書]([トラブルシューティング](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/troubleshooting-access-points-for-fsxn.html)) |
-| 8 | ボリューム数が 491(第 2 世代・1 HA ペアほか)に収まるか | [文書](クォータ) |
+| 8 | ボリューム数が上限に収まるか。第 1 世代と第 2 世代の HA ペア 1 組で 491、HA ペア 2 組で 975、12 組で 903 | [文書](クォータ) |
 | 9 | 呼び出し元ごとの origin。origin は作成後に変更できない | [文書]([ネットワーク](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/configuring-network-access-for-s3-access-points.html)) |
 | 10 | 同一アカウント・同一リージョンか | [文書] |
 | 11 | S3 のイベント通知、バージョニング、Object Lock、ライフサイクルを前提にした設計になっていないか | [文書]([互換性](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/access-points-for-fsxn-object-api-support.html)) |
 | 12 | NFS / SMB で作ったディレクトリは、空になると S3 側から消える。S3 側が依存するディレクトリは、S3 API で作る | [公表](AWS Storage Blog) |
+
+### 6.3 状態と最初の対処
+
+| 状態 | 主な原因 | 最初の対処 | 根拠 |
+|---|---|---|---|
+| FAILED(作成直後) | ID を SVM が解決できない | アクセスポイントを削除し、解決できる ID で作り直す。ID は作成後に変更できない | [実測: 本リポジトリ](約 45 秒後に FAILED) |
+| MISCONFIGURED | ID が解決できなくなった、ボリュームがオフラインかアンマウント | ネームサービスかボリュームを直す。原因が解消すると AVAILABLE に戻る | [文書]([作成手順](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/create-access-points.html)) |
+| AccessDenied(VPC の外から) | VPC origin のアクセスポイント | 呼び出し元に合う origin のアクセスポイントを別に作る | [実測: 本リポジトリ] |
+| AccessDenied(AD 参加 SVM) | ドメインコントローラに到達できない | DC への経路と DNS を確かめる | [実測: 他の Spoke] |
+| `503 Slow Down` など | スループットの不足 | CloudWatch のスループット使用率を見て、スループット容量を上げる | [文書]([トラブルシューティング](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/troubleshooting-access-points-for-fsxn.html)) |
+
+監視には、Lifecycle の状態の定期取得と、小さいオブジェクトの書き込み・読み戻し(sha256 の比較)が使える。HeadBucket だけでは、AD 参加 SVM の異常を見落とす。
 
 ---
 
@@ -150,7 +164,7 @@ SnapMirror の宛先ボリュームから分析する、という使い方は、
 
 ![図 3: アクセスポイントの origin ごとの連携先。Amazon FSx for NetApp ONTAP から、Internet origin の S3 Access Points と VPC origin の S3 Access Points に分かれ、Internet origin には Amazon Athena、AWS Glue、Amazon EMR、Amazon Bedrock、AWS Transfer Family、Amazon CloudFront、VPC 外の AWS Lambda、VPC origin には Amazon ECS、Amazon EKS、Amazon EC2、VPC 内の AWS Lambda がつながる](../_assets/images/s3ap-consumer-map.svg)
 
-図 3: 連携先を origin で分けた地図。描いていないサービスは 7.5 にある。
+図 3: 連携先を origin で分けた地図。図に描いたのは、AWS の文書か実測で origin が分かっているサービスである。制約(Athena は読み取りのみ、EMR の Iceberg 書き込みは不可など)と、図に無いサービスは 7.1〜7.5 の表にある。
 
 **表の読み方。** 「区分」は 3 章のタグ。1 つの行に複数のタグがあるときは、それぞれの根拠が別にある。
 
@@ -158,7 +172,7 @@ SnapMirror の宛先ボリュームから分析する、という使い方は、
 
 | 連携先 | origin | 使い方 | 区分 | 注意 |
 |---|---|---|---|---|
-| Amazon ECS(AWS Fargate) | VPC | S3 SDK で alias か ARN を呼ぶ。タスクロール | [文書]、[公表]、[実測: 本リポジトリ] | マウントは無い。Gateway エンドポイントはオンプレミスやピアリング経由の通信を運ばない |
+| Amazon ECS(AWS Fargate) | VPC | S3 SDK で alias か ARN を呼ぶ。タスクロール | [文書]([ECS のストレージ](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_data_volumes.html): FSx for ONTAP は EC2 でネイティブのマウント、Fargate は S3 Access Points 経由)、[実測: 本リポジトリ] | マウントは無い。Gateway エンドポイントは、オンプレミスやピアリング経由の通信を通さない |
 | Amazon EKS(AWS Fargate) | VPC | IRSA。CoreDNS を Fargate に載せる | [実測: 本リポジトリ] | AWS の公開ページで EKS を名指ししたものは見つからなかった |
 | Amazon EKS(EC2) | VPC | ノードか Pod の IAM で S3 SDK を呼ぶ | [公開された言及なし] | 構成 2 の実測は Trident の PV で、S3 経路とは別 |
 | AWS Lambda | VPC 外は Internet、VPC 内は VPC | S3 SDK。ファイルの自動処理 | [文書]、[実測: 他の Spoke]([ネットワークの検証](https://github.com/Yoshiki0705/fsxn-lakehouse-integrations/blob/main/docs/en/fsx-ontap-s3ap-networking.md)) | VPC 内の Lambda から Internet origin を Gateway エンドポイント経由で呼ぶとタイムアウトした。NAT か VPC の外の Lambda は通った |
@@ -209,13 +223,24 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 
 図 2: リクエストが通る 4 つの関門と、origin による呼び出し元の分かれ方。
 
-**関門は 4 つで、後ろの 2 つは AWS の IAM の外にある。** IAM とアクセスポイントのポリシー(1)、origin(2)、アクセスポイントに固定した ID(3)、ボリュームのモードビットや ACL(4)の順に評価される。同一アカウントでは、ID ポリシーかアクセスポイントのポリシーのどちらかが許可すれば成立するため、制限するには明示的な Deny を書く [文書]。
+**関門は 4 つで、すべてを通る必要がある。後ろの 2 つは AWS の IAM の外にある。** IAM とアクセスポイントのポリシー(1)、origin(2)、アクセスポイントに固定した ID(3)、ボリュームのモードビットや ACL(4)である。図の番号は読む順の目安で、AWS が評価の順序をこう定めたという記述ではない。評価の順序は Hub の[決定木](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/reference/decision-trees/access-point-authorization.md)が出典つきで扱う。同一アカウントでは、ID ポリシーかアクセスポイントのポリシーのどちらかが許可すれば成立するため、制限するには明示的な Deny を書く [文書]。
+
+| 呼び出し元 | origin | `--bucket` に渡すもの | 認証 | 根拠 |
+|---|---|---|---|---|
+| Amazon ECS(AWS Fargate) | VPC | alias か ARN | タスクロール | [実測: 本リポジトリ] |
+| Amazon EKS(AWS Fargate) | VPC | alias か ARN | IRSA(Fargate では EKS Pod Identity を使えない) | [実測: 本リポジトリ] |
+| VPC 内の Amazon EC2 / AWS Lambda | VPC(S3 の Gateway エンドポイント) | alias か ARN | インスタンスロール / 実行ロール | [文書] |
+| VPC 外の AWS Lambda | Internet | alias か ARN | 実行ロール | [文書]、[実測: 他の Spoke] |
+| Amazon Athena / AWS Glue / Amazon EMR Serverless | Internet | Glue のカタログに alias | 各サービスのロール | [文書]、[実測: 他の Spoke] |
+| Amazon Bedrock Knowledge Bases | Internet | データソースに alias | サービスロール(ポリシーはアクセスポイントの ARN) | [文書] |
+| AWS Transfer Family | Internet | alias のみ | ユーザーごとの IAM ロール | [文書] |
+| Snowflake | 他の Spoke の実測は Internet | ステージに alias と `AWS_ACCESS_POINT_ARN` | ストレージ統合の IAM ロール | [実測: 他の Spoke] |
 
 - **ポリシーの `Resource` は、アクセスポイントの ARN にする。** `Resource: '*'` は S3 Control に拒否された [実測: 本リポジトリ、2026-11-10]。
 - **VPC origin は VPC の外からの要求を拒否する。** 管理者権限の IAM プリンシパルでも AccessDenied だった [実測: 本リポジトリ、2026-11-10]。Internet origin も公開ではなく、SigV4 が要り、Block Public Access は常に有効である [文書]。
 - **同じボリュームを Fargate とマネージドサービスの両方から使うなら、origin の違うアクセスポイントを分ける。** AWS のブログも、要件の違う相手ごとにアクセスポイントを分けることを勧めている [公表]。
 - **ID は非 root の専用ユーザーにする。** SVM のローカルユーザーを使うと、モードビットで読み書きの範囲が絞られた [実測: 本リポジトリ、5.4]。`root` はすべてのファイルを認可するので、測定の条件に留める。
-- **AD に参加した SVM では、DNS に到達できないと、UNIX スタイルのボリュームでもアクセスポイントの呼び出しがタイムアウトした。** 仕組みの説明は作者の読みである [実測: 他の Spoke]([ネットワークの検証](https://github.com/Yoshiki0705/fsxn-lakehouse-integrations/blob/main/docs/en/fsx-ontap-s3ap-networking.md))。
+- **AD に参加した SVM では、DNS やドメインコントローラに到達できないと、UNIX スタイルのボリュームでもアクセスポイントの呼び出しが失敗した。** 6.2 の 4a と 6.3 に対処を置いた [実測: 他の Spoke]([ネットワークの検証](https://github.com/Yoshiki0705/fsxn-lakehouse-integrations/blob/main/docs/en/fsx-ontap-s3ap-networking.md))。
 
 認可の評価順序の詳細は、Hub の[アクセスポイントの認可の層](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/security-governance/notes/access-point-authorization-layers.md)にある。
 
@@ -223,13 +248,13 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 
 ## 9. コンテナでの実機確認と、隔離 Pod との組み合わせ
 
-![図 1: コンテナから S3 Access Points を通って FSx for ONTAP のボリュームに届く経路。Amazon ECS と Amazon EKS(どちらも AWS Fargate)が S3 Gateway エンドポイントから S3 Access Points(VPC origin)を呼び、Amazon FSx for NetApp ONTAP のボリュームに届く。Amazon EC2 は NFS / SMB で同じボリュームを使う](../_assets/images/s3ap-container-overview.svg)
+![図 1: コンテナから S3 Access Points を通って FSx for ONTAP のボリュームに到達する経路。Amazon ECS と Amazon EKS(どちらも AWS Fargate)が S3 Gateway エンドポイントから S3 Access Points(VPC origin)を呼び、Amazon FSx for NetApp ONTAP のボリュームに届く。Amazon EC2 は NFS / SMB で同じボリュームを使う](../_assets/images/s3ap-container-overview.svg)
 
-図 1: コンテナがボリュームに届く経路。
+図 1: コンテナがボリュームに到達する経路。
 
 2026-11-10 に ap-northeast-1 で、使い捨ての SVM とボリュームに対し、Fargate の ECS と EKS(1.35)から読み書きと一覧を確認した [実測: 本リポジトリ]。alias と ARN の両方で通り、書き込み前後の sha256 が一致した。NFS 側から見たときの可視性、`ec2-user` での FAILED、非 root ユーザーでの権限、撤収後の基線との一致を含む全結果は、[storage-verification の 5.4](atx-containerization-fsxn-storage-verification.md) にある。見つけた不具合 2 件(ポリシーの `Resource`、ID の既定値)は、テンプレートで直してある。
 
-**EKS の隔離 Pod(Nitro Sandbox)では、Trident の NFS の PV が使えなかった。** コンテナ作成の段階で失敗し、EBS の PVC は使えた(1 回の観測)。FSx for ONTAP のデータを隔離 Pod で使う選択肢としては、アクセスポイント経由で S3 SDK から読む形もありうる。ただし隔離 Pod からアクセスポイントを呼ぶ構成は、確かめていない [未測定]。詳細と公開した issue は [9.1](atx-containerization-fsxn-storage-verification.md) にある。
+**EKS の隔離 Pod(Nitro Sandbox)では、Trident の NFS の PV が使えなかった。** コンテナ作成の段階で失敗し、EBS の PVC は使えた(1 回の観測)。FSx for ONTAP のデータを隔離 Pod で使う選択肢としては、アクセスポイント経由で S3 SDK から読む形もありうる。ただし隔離 Pod からアクセスポイントを呼ぶ構成は、確かめていない [未測定]。観測の詳細は [storage-verification の 9.1](atx-containerization-fsxn-storage-verification.md) にある。サードパーティ CSI の扱いの明記を[文書フィードバック](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259)で、NFS とブロックの対応を機能要望([NFS](https://github.com/aws/containers-roadmap/issues/2911)、[ブロック](https://github.com/aws/containers-roadmap/issues/2912))で公開した。issue の提出は、AWS が受理や優先付けをしたことを意味しない。
 
 ---
 
@@ -242,13 +267,13 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 | ボリューム | マウント済み。SVM で S3 を許可 | [文書] |
 | 使えない S3 機能 | ACL(`bucket-owner-full-control` 以外)、Object Annotations、Requester Pays、バージョニング、Object Lock、ライフサイクル、静的 Web ホスティング、MFA Delete、条件付き書き込み、バケット通知の取得 | [文書]([互換性](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/access-points-for-fsxn-object-api-support.html)) |
 | ストレージクラス・暗号化 | `FSX_ONTAP` のみ、SSE-FSX のみ | [文書] |
-| アップロードの最大サイズ | 50 GiB(リファレンス)。Transfer Family のブログは 5 GB と書く。11 章 | [文書]、[公表] |
-| コピー | 同一アクセスポイント内のみ | [文書] |
+| アップロードの最大サイズ | 1 回の PutObject と 1 パートは 5 GiB(5,368,709,120 バイト)、マルチパートでのオブジェクト全体は 50 GiB。全体の上限は CompleteMultipartUpload で初めて判定され、転送を終えてから拒否される。アップロード前にクライアント側でサイズを確かめる | [文書](50 GiB)、[実測: 他の Spoke]([オブジェクトサイズの検証](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/s3ap-object-size-limits-verification.en.md)、2026-08-02) |
+| コピー | 同一アクセスポイント内のみ [文書]。UploadPartCopy は、文書上は対応だが `NoSuchKey` で失敗した | [文書]、[実測: 他の Spoke](同上) |
 | チェックサム | 検証するが保存せず、返さない。ETag は MD5 ではない | [文書] |
 | 途中のマルチパート | ボリュームのバックアップに含まれない。使った容量はファイルシステムの `StorageUsed` に出て、ボリュームには出ない | [文書] |
-| スループット | ファイルシステムのプロビジョンド スループットに依存。遅延は「数十ミリ秒」 | [文書] |
-| 料金 | FSx の料金に加え、アクセスポイント経由の S3 リクエストとデータ転送が課金される | [文書]、[公表] |
-| ボリューム数の上限 | 500 → 491(第 2 世代・1 HA ペアほか) | [文書] |
+| スループット | ファイルシステムのプロビジョンド スループットに依存。遅延は「数十ミリ秒」[文書]。128 MBps の第 1 世代 Single-AZ、Internet origin で、1 MB の GetObject の P50 は VPC 外の Lambda から 73 ms、手元のクライアントから 175 ms(並列度 10)。並列度 25 以上で P99 が 1 秒を超えた。サイジングの目安で、サービスの上限ではない | [文書]、[実測: 他の Spoke]([ベンチマーク](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/s3ap-benchmark-results.en.md)、2026-05) |
+| 料金 | FSx の料金に加え、アクセスポイント経由の S3 リクエストとデータ転送が課金される。単価は[FSx for ONTAP の料金](https://aws.amazon.com/fsx/netapp-ontap/pricing/)と S3 の料金ページで、リージョンと日付を確かめる。VPC 内の Lambda から Internet origin を使うなら NAT の料金も加わる | [文書]、[公表] |
+| ボリューム数の上限 | 第 1 世代と第 2 世代の HA ペア 1 組で 500 → 491、HA ペア 2 組で 1,000 → 975、12 組で 903 | [文書] |
 | 変更できないもの | origin、ファイルシステムの ID | [文書]、[実測: 本リポジトリ](ID は作成後に変更できない) |
 | イベント通知 | 使えない(2026-11-11 時点)。FPolicy も、アクセスポイント経由の書き込みを検知しなかった(9 回の呼び出しで 0 件、2026-08-26) | [文書]、[実測: 他の Spoke]([証跡](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/aws-feature-requests/native-s3ap-notifications-evidence.en.md)) |
 | NFS と S3 の同時書き込み | AWS のページに記述が見つからなかった。作者の別リポジトリに[書き込み衝突の検証](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/en/nfs-s3ap-write-conflict.md)がある | [公開された言及なし]、[実測: 他の Spoke] |
@@ -257,9 +282,9 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 
 ## 11. 食い違いが解けていない記述
 
-次の 3 点は、AWS 自身の記述どうしが食い違っている。決めずに並べる。使う前に出典を読み直す。
+次の 3 点は、AWS 自身の記述どうし、または記述と実測が食い違っている。決めずに並べる。使う前に出典を読み直す。
 
-- **アップロードの最大サイズ。** FSx のリファレンスは 50 GiB、AWS Storage Blog(SFTP の記事)は 5 GB と書く(2026-11-11 に両方を読んだ)。ブログの 5 GB が 1 パートあたりの上限を指すのかは、読み取れなかった。
+- **Transfer Family のアップロードの上限。** AWS Storage Blog(SFTP の記事)は 1 ファイル 5 GB と書く。他の Spoke の実測では、5 GiB は 1 回の PutObject の上限で、オブジェクト全体はマルチパートで 50 GiB まで書けた。Transfer Family がマルチパートを使うかは確かめていないので、ブログの 5 GB が Transfer Family の経路で正しいかは決めていない。
 - **リージョン。** FSx のドキュメント履歴の 2026-11-06 の行が「China Regions」に触れるが、同じ日に読んだリージョン表には無い。
 - **イベント通知。** リファレンスは `GetBucketNotificationConfiguration` を非対応とし、AWS のブログは S3 イベントによるトリガに触れる文がある。ブログの構成例は EventBridge のスケジュールと Step Functions の定期実行であり、リファレンスを優先した。
 
@@ -270,9 +295,11 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 1. 呼び出し元を書き出し、7 章で origin を決める。マネージドサービスと VPC 内のコンピュートが混在するなら、アクセスポイントを分ける。
 2. ID を決める。ボリュームのセキュリティスタイルに合わせ、SVM で解決できるかを ONTAP 側で確かめる。`root` は避ける。
 3. ONTAP のバージョン、S3 プロトコル、ボリュームのマウント、ボリューム数の余裕を 6.2 で確かめる。
-4. 使い捨てのボリュームで、作成 → 書き込み → 読み戻しの sha256 比較 → 一覧 → 撤収までを 1 回通す。手順とテンプレートは、このリポジトリの `templates/` と [storage-verification の 5.4](atx-containerization-fsxn-storage-verification.md) にある。
+4. 使い捨てのボリュームで、作成 → 書き込み → 読み戻しの sha256 比較 → 一覧 → 撤収までを 1 回通す。テンプレートは `templates/containers-ecs-fargate-fsxn-s3ap.yaml` と `templates/containers-eks-fargate-fsxn-s3ap.yaml` で、`FileSystemUnixUser` は必須である。手順と期待する結果は [storage-verification の 5.4](atx-containerization-fsxn-storage-verification.md) にある。
 5. 本番の前に、NFS / SMB のクライアントがある場合は、S3 の書き込みが NFS からいつ見えるかを自環境で測る。本リポジトリの観測は、約 28 秒後と約 100 秒後のどちらでも見えた、までである。
 6. S3 のイベント通知を前提にした設計は、定期ポーリングに置き換える。
+
+この文書は技術的な検討の材料で、セキュリティやコンプライアンスの評価に代わるものではない。本リポジトリの実測は、使い捨ての環境と合成データで行った。
 
 ---
 

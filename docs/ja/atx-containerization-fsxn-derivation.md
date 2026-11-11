@@ -151,7 +151,7 @@ ECS から FSx for ONTAP を使う手順は、**EC2 起動タイプ**を前提�
 |---|---|---|
 | EKS Fargate | DaemonSet、特権(Privileged)Pod、HostNetwork / HostPort が使えない。Trident は各ワーカーノードで node pod(DaemonSet)を動かす設計のため、Fargate では起動できない | [Simplify compute management with AWS Fargate](https://docs.aws.amazon.com/eks/latest/userguide/fargate.html)、[Trident architecture](https://docs.netapp.com/us-en/trident/trident-get-started/architecture.html) |
 | EKS Fargate(他ストレージ) | EFS CSI は Fargate で動的プロビジョニング不可・静的のみ。EBS CSI は controller は Fargate 可だが node DaemonSet は EC2 のみ。Fargate で使える永続は EFS(静的)に限られる | [Amazon EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html)、[Amazon EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) |
-| ECS Fargate | タスク定義は bind mount host ボリュームと EFS ボリュームのみ対応。`dockerVolumeConfiguration` 非対応。FSx for ONTAP はサポートされるボリューム種別に含まれない | [Amazon ECS task definition differences for Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html) |
+| ECS Fargate | Fargate で使えるボリュームは Amazon EBS、Amazon EFS、Amazon S3 Files、bind mount。`dockerVolumeConfiguration`(Docker ボリューム)は EC2 のみ。FSx for ONTAP のネイティブのマウントは EC2 のみで、Fargate からは S3 Access Points 経由で使うと AWS は書く(2026-11-11 に確認) | [Storage options for Amazon ECS tasks](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_data_volumes.html)、[Amazon ECS task definition differences for Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html) |
 
 したがって「AWS Transform の ECS デプロイは Fargate 対応(3.3)」と「Fargate では FSx for ONTAP を使えない(本節)」は両立する。**Fargate の運用簡素化を取るなら FSx for ONTAP は付けられず、FSx for ONTAP の永続ボリュームを取るなら EKS の EC2 ワーカーノード(または ECS の EC2 起動タイプ)を選ぶ**、というトレードオフになる。
 
@@ -180,7 +180,7 @@ FSx for ONTAP のブロック(iSCSI LUN)利用について、想定どおりデ�
 |---|---|---|---|---|---|
 | データベース(専用ディスク要求) | iSCSI(ゲスト)[実測] | iSCSI PV / NFS PV [文書] | ✕(CSI 不可)[文書] | host NFS [文書] | ✕(接続不可)[文書] |
 | ステートフルな .NET / Java アプリ(単一ライター) | iSCSI(ゲスト)[文書] | iSCSI PV [文書] | ✕ [文書] | host NFS [文書] | ✕ [文書] |
-| 共有データを持つ水平スケール Web アプリ | iSCSI(ゲスト)[文書] | NFS PV(RWX)[文書] | ✕ [文書] | host NFS [文書] | ✕(EFS のみ)[文書] |
+| 共有データを持つ水平スケール Web アプリ | iSCSI(ゲスト)[文書] | NFS PV(RWX)[文書] | ✕ [文書] | host NFS [文書] | ✕(共有は EFS か S3 Files)[文書] |
 | ステートレス Web / API | 該当薄(データ無) | 任意(不要なら未使用) | 永続不要 [文書] | 任意 | Fargate 適(永続不要)[文書] |
 | Windows / SMB 依存アプリ | iSCSI(ゲスト)[文書] | SMB PV(Windows ノード)[文書] | ✕ [文書] | host SMB(Windows EC2)[文書] | ✕ [文書] |
 
