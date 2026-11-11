@@ -27,7 +27,7 @@ docs until the CI workflows are ported from the hub template.
 # Naming: no FSxN / bare FSx / FSx ONTAP outside allow:naming
 grep -nE '\bFSxN\b|FSx ONTAP' <changed.md>
 # Vendor neutrality: no superiority claims
-grep -nE '最強|最速|fastest|is better than|競合ツール|優位性' <changed.md>
+grep -nE '最強|最速|fastest|is better than|競合ツール|優位性|差別化|顧客|competitor|differentiator' <changed.md>
 # JA/EN parity: matching '##' counts
 grep -c '^##' docs/ja/<f>.md docs/en/<f>.md
 # Secrets

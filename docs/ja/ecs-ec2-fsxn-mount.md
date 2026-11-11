@@ -162,7 +162,7 @@ Trident の backend として FSx for ONTAP はサポート対象に挙がって
 3. **タスク定義**: `dockerVolumeConfiguration` で `driver: netapp`、`autoprovision` の要否を確認。
 4. **検証項目**:
    - プラグインが FSx for ONTAP に接続し、ボリュームをプロビジョン/マウントできるか。
-   - `ontap-san`(iSCSI)使用時、ノードのマルチパス設定と EBS の競合(`multipath.conf` で EBS を blacklist する必要)を回避できるか。
+   - `ontap-san`(iSCSI)使用時、ノードのマルチパス設定と EBS の衝突(`multipath.conf` で EBS を blacklist する必要)を回避できるか。
    - タスク再起動・インスタンス入れ替え時のマウントの再現。
    - NFS ホストマウント方式(3 章)との運用差(動的プロビジョン、ONTAP 機能)。
 5. **記録**: できた/できなかった/条件付きで成立、を本文書の 4.3 に反映し、[未測定] を [実測] へ更新する。
@@ -176,7 +176,7 @@ Trident の backend として FSx for ONTAP はサポート対象に挙がって
 | E1 | ECS + Trident Docker プラグイン + FSx for ONTAP の統合可否 | 原理的に成立しうる(4.3)。公式サポートの明記は見つからず。実機未検証 [未測定] |
 | E2 | マウント失敗時の ECS タスクの実挙動 | 未検証。運用設計側の課題 [未測定] |
 | E3 | NFS の UID/GID と ONTAP エクスポートポリシーの具体的対応 | 実機で確認要 [未測定] |
-| E4 | Trident Docker プラグインの `ontap-san` 使用時の EBS multipath 競合回避 | Kubernetes 経路では blacklist 必須と判明済み。Docker プラグイン経路での挙動は未検証 [未測定] |
+| E4 | Trident Docker プラグインの `ontap-san` 使用時の EBS multipath の衝突の回避 | Kubernetes 経路では blacklist 必須と判明済み。Docker プラグイン経路での挙動は未検証 [未測定] |
 
 ---
 

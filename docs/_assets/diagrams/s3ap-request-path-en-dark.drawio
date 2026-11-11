@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-08-28T00:00:00.000Z" agent="build_diagrams.py" version="24.0.0" type="device">
+  <diagram id="s3ap-request-path-en-dark" name="s3ap-request-path-en-dark">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="940" pageHeight="860" background="#232F3E" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" source="g1" target="g2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" source="g2" target="g3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" source="g3" target="g4" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="g2" target="vpc" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="g2" target="internet" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="g1" value="&lt;b&gt;1. IAM&lt;/b&gt;&lt;br&gt;The caller's identity policy and&lt;br&gt;the access point policy" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="g2" value="&lt;b&gt;2. Network origin&lt;/b&gt;&lt;br&gt;VPC origin or Internet origin&lt;br&gt;It cannot be changed after creation" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="g3" value="&lt;b&gt;3. File system identity&lt;/b&gt;&lt;br&gt;One UNIX or Windows user&lt;br&gt;fixed on the access point" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="340" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="g4" value="&lt;b&gt;4. Volume permissions&lt;/b&gt;&lt;br&gt;Mode bits, NFSv4 ACLs, or NTFS ACLs,&lt;br&gt;evaluated for that identity" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="490" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="vpc" value="&lt;b&gt;VPC origin&lt;/b&gt;&lt;br&gt;Amazon ECS and Amazon EKS on AWS Fargate,&lt;br&gt;Amazon EC2 and AWS Lambda in the VPC&lt;br&gt;Traffic goes through an S3 gateway endpoint" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="500" y="250" width="400" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="internet" value="&lt;b&gt;Internet origin&lt;/b&gt;&lt;br&gt;Amazon Athena, AWS Glue,&lt;br&gt;Amazon EMR Serverless,&lt;br&gt;Amazon Bedrock Knowledge Bases,&lt;br&gt;AWS Transfer Family, Amazon CloudFront,&lt;br&gt;and AWS Lambda outside a VPC&lt;br&gt;Not public: SigV4 is required and&lt;br&gt;Block Public Access is always on" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="500" y="410" width="400" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="notes" value="&lt;b&gt;Notes&lt;/b&gt;&lt;br&gt;*1 &lt;b&gt;Work back from the caller to the origin&lt;/b&gt;&lt;br&gt;To use one volume from AWS Fargate and from managed services, create separate access points with different origins.&lt;br&gt;*2 &lt;b&gt;One identity; per-requester ACLs are not evaluated&lt;/b&gt;&lt;br&gt;If the SVM cannot resolve the identity, the access point goes to FAILED after the create call succeeds (observed 2026-11-10).&lt;br&gt;*3 &lt;b&gt;VPC origin refuses calls from outside the VPC, even with administrator rights&lt;/b&gt;&lt;br&gt;An administrator IAM principal got AccessDenied (observed 2026-11-10)." style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=top;align=left;spacingLeft=10;spacingRight=10;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="860" height="200" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

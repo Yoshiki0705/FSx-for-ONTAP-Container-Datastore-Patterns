@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-08-28T00:00:00.000Z" agent="build_diagrams.py" version="24.0.0" type="device">
+  <diagram id="s3ap-request-path-dark" name="s3ap-request-path-dark">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="940" pageHeight="860" background="#232F3E" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" source="g1" target="g2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" source="g2" target="g3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" edge="1" source="g3" target="g4" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="g2" target="vpc" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeColor=#FFFFFF;strokeWidth=1;fontSize=16;fontColor=#FFFFFF;labelBackgroundColor=#232F3E;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="g2" target="internet" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="g1" value="&lt;b&gt;① IAM&lt;/b&gt;&lt;br&gt;呼び出し側の ID ポリシーと&lt;br&gt;アクセスポイントのポリシー" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="g2" value="&lt;b&gt;② ネットワーク origin&lt;/b&gt;&lt;br&gt;VPC origin か Internet origin&lt;br&gt;作成後に変更できない" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="g3" value="&lt;b&gt;③ ファイルシステムの ID&lt;/b&gt;&lt;br&gt;アクセスポイントに固定した&lt;br&gt;UNIX か Windows のユーザー 1 つ" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="340" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="g4" value="&lt;b&gt;④ ボリュームの権限&lt;/b&gt;&lt;br&gt;モードビット、NFSv4 ACL、NTFS ACL を&lt;br&gt;この ID に対して評価する" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="490" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="vpc" value="&lt;b&gt;VPC origin&lt;/b&gt;&lt;br&gt;AWS Fargate の Amazon ECS と Amazon EKS、&lt;br&gt;VPC 内の Amazon EC2 と AWS Lambda&lt;br&gt;S3 の Gateway エンドポイントを通る" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="500" y="250" width="400" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="internet" value="&lt;b&gt;Internet origin&lt;/b&gt;&lt;br&gt;Amazon Athena、AWS Glue、&lt;br&gt;Amazon EMR Serverless、AWS Transfer Family、&lt;br&gt;Amazon Bedrock Knowledge Bases、&lt;br&gt;Amazon CloudFront、VPC 外の AWS Lambda&lt;br&gt;公開はされない: SigV4 が必須で、&lt;br&gt;Block Public Access は常に有効" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="500" y="410" width="400" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="notes" value="&lt;b&gt;補足&lt;/b&gt;&lt;br&gt;※1 &lt;b&gt;origin は呼び出し元から逆算する&lt;/b&gt;&lt;br&gt;AWS Fargate とマネージドサービスの両方から同じボリュームを使うなら、&lt;br&gt;origin の違うアクセスポイントを分けて作る。&lt;br&gt;※2 &lt;b&gt;ID は 1 つで、要求者ごとの ACL は評価されない&lt;/b&gt;&lt;br&gt;ID が SVM で解決できないと、作成 API が成功したあとに FAILED になる(実測、2026-11-10)。&lt;br&gt;※3 &lt;b&gt;VPC origin は管理者権限でも VPC の外からは拒否する&lt;/b&gt;&lt;br&gt;管理者権限の IAM プリンシパルでも AccessDenied だった(実測、2026-11-10)。" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FFFFFF;fillColor=none;fontColor=#FFFFFF;fontSize=16;verticalAlign=top;align=left;spacingLeft=10;spacingRight=10;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="860" height="200" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

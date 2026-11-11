@@ -124,7 +124,7 @@ Trident は EKS クラスタに対して**ブロックとファイルの両方�
 
 **運用上の注意(対称に記載)**:
 
-- iSCSI(`ontap-san`)を使う場合、ノードのマルチパス設定が Amazon EBS CSI ドライバと競合しうる。`multipath.conf` で EBS デバイスを blacklist する必要がある(出典: 上記 EKS ユーザーガイドおよび Trident ドキュメント両方に記載)。
+- iSCSI(`ontap-san`)を使う場合、ノードのマルチパス設定が Amazon EBS CSI ドライバと衝突しうる。`multipath.conf` で EBS デバイスを blacklist する必要がある(出典: 上記 EKS ユーザーガイドおよび Trident ドキュメント両方に記載)。
 - SMB ボリュームは `ontap-nas` ドライバのみ、Windows ノードのみで、Trident EKS アドオンでは非対応。
 - NVMe-oF は Trident 25.02 のテスト対象に含まれていない [文書]。
 
@@ -151,9 +151,9 @@ ECS から FSx for ONTAP を使う手順は、**EC2 起動タイプ**を前提�
 |---|---|---|
 | EKS Fargate | DaemonSet、特権(Privileged)Pod、HostNetwork / HostPort が使えない。Trident は各ワーカーノードで node pod(DaemonSet)を動かす設計のため、Fargate では起動できない | [Simplify compute management with AWS Fargate](https://docs.aws.amazon.com/eks/latest/userguide/fargate.html)、[Trident architecture](https://docs.netapp.com/us-en/trident/trident-get-started/architecture.html) |
 | EKS Fargate(他ストレージ) | EFS CSI は Fargate で動的プロビジョニング不可・静的のみ。EBS CSI は controller は Fargate 可だが node DaemonSet は EC2 のみ。Fargate で使える永続は EFS(静的)に限られる | [Amazon EFS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html)、[Amazon EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) |
-| ECS Fargate | タスク定義は bind mount host ボリュームと EFS ボリュームのみ対応。`dockerVolumeConfiguration` 非対応。FSx for ONTAP はサポートされるボリューム種別に含まれない | [Amazon ECS task definition differences for Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html) |
+| ECS Fargate | Fargate で使えるボリュームは Amazon EBS、Amazon EFS、Amazon S3 Files、bind mount。`dockerVolumeConfiguration`(Docker ボリューム)は EC2 のみ。FSx for ONTAP のネイティブのマウントは EC2 のみで、Fargate からは S3 Access Points 経由で使うと AWS は書く(2026-11-11 に確認) | [Storage options for Amazon ECS tasks](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_data_volumes.html)、[Amazon ECS task definition differences for Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html) |
 
-したがって「AWS Transform の ECS デプロイは Fargate 対応(3.3)」と「Fargate では FSx for ONTAP を使えない(本節)」は両立する。**Fargate の運用簡素化を取るなら FSx for ONTAP は付けられず、FSx for ONTAP の永続ボリュームを取るなら EKS の EC2 ワーカーノード(または ECS の EC2 起動タイプ)を選ぶ**、というトレードオフになる。
+したがって「AWS Transform の ECS デプロイは Fargate 対応(3.3)」と「Fargate では FSx for ONTAP をマウントできない(本節)」は両立する。**Fargate の運用簡素化を取るなら FSx for ONTAP はマウントできず、S3 Access Points 経由の S3 API で読み書きする(アプリの改修が要る)。ファイル I/O のまま FSx for ONTAP の永続ボリュームを使うなら、EKS の EC2 ワーカーノード(または ECS の EC2 起動タイプ)を選ぶ**、というトレードオフになる。
 
 ---
 
@@ -180,7 +180,7 @@ FSx for ONTAP のブロック(iSCSI LUN)利用について、想定どおりデ�
 |---|---|---|---|---|---|
 | データベース(専用ディスク要求) | iSCSI(ゲスト)[実測] | iSCSI PV / NFS PV [文書] | ✕(CSI 不可)[文書] | host NFS [文書] | ✕(接続不可)[文書] |
 | ステートフルな .NET / Java アプリ(単一ライター) | iSCSI(ゲスト)[文書] | iSCSI PV [文書] | ✕ [文書] | host NFS [文書] | ✕ [文書] |
-| 共有データを持つ水平スケール Web アプリ | iSCSI(ゲスト)[文書] | NFS PV(RWX)[文書] | ✕ [文書] | host NFS [文書] | ✕(EFS のみ)[文書] |
+| 共有データを持つ水平スケール Web アプリ | iSCSI(ゲスト)[文書] | NFS PV(RWX)[文書] | ✕ [文書] | host NFS [文書] | ✕(共有は EFS か S3 Files)[文書] |
 | ステートレス Web / API | 該当薄(データ無) | 任意(不要なら未使用) | 永続不要 [文書] | 任意 | Fargate 適(永続不要)[文書] |
 | Windows / SMB 依存アプリ | iSCSI(ゲスト)[文書] | SMB PV(Windows ノード)[文書] | ✕ [文書] | host SMB(Windows EC2)[文書] | ✕ [文書] |
 
@@ -233,7 +233,7 @@ D フェーズ(本リポジトリでは文献調査)の結論として、コン�
 1. **コンテナ化**: AWS Transform でソースコードをコンテナ化し、ECR へ publish、EKS(EC2 ワーカーノード)へデプロイ。
 2. **CSI 導入**: EKS クラスタに NetApp Trident を導入(Helm または AWS 検証済み EKS アドオン)。FSx for ONTAP のファイルシステムと SVM、認証情報(Secrets Manager)を用意。
 3. **PV 構成**: 用途に応じて `ontap-nas`(NFS / 共有)または `ontap-san`(iSCSI / 専用)の StorageClass を作り、アプリの PVC から要求する。
-4. **検証**: データ整合性、フェイルオーバー時の挙動、iSCSI 使用時の EBS multipath 競合の回避を確認。
+4. **検証**: データ整合性、フェイルオーバー時の挙動、iSCSI 使用時の EBS multipath の衝突の回避を確認。
 
 この経路は EC2 リホストの検証(既存)とは別のリポジトリ / Kiro プロジェクトに分割する余地がある。理由は、(a) 対象が VMware VM ではなくソースコードであること、(b) 検証に EKS クラスタと Trident という別のスタックが要ること、(c) FSx for ONTAP の到達形態が iSCSI ゲストマウントから CSI PV へ変わること。分割の是非は、実機検証で実現性を確認してから判断する。
 
@@ -299,7 +299,7 @@ MGN とは成熟度が異なるため、設計の前提に据える場合はこ�
 | ブロックを要求するワークロード | データベースのデータ領域、raw ブロックデバイスを前提とするミドルウェア、StatefulSet 各レプリカの専用ボリューム、専用 IOPS を要求する処理。いずれもファイル共有(RWX)ではなくブロック(RWO 中心)が適する(5 章の区分と整合) |
 | VM ディスクをブロックとして扱う移行先 | OpenShift Virtualization / KubeVirt は VM ディスクをブロック PVC で扱うのが一般的で、ファイルとして運んだディスクをブロック LUN へ変換して着地させる需要がある |
 
-ユースケースは特定顧客の事例ではなく類型として示す。file-to-LUN は Preview 機能のため、実機
+ユースケースは特定の組織の事例ではなく類型として示す。file-to-LUN は Preview 機能のため、実機
 挙動と適合するワークロードの確定は実機検証を要する(10.4 の C5 / C6)。
 
 ### 10.3 コンテナのデータストアとの接続(2 段階移行)[文書]
