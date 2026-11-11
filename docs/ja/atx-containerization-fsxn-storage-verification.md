@@ -309,7 +309,7 @@ Pod ごとに専用の Nitro Sandbox(Firecracker の microVM)で動かす機能�
 
 ![図 4: Amazon EKS Auto Mode のクラスタで、通常の Pod 2 本は NetApp Trident の NFS の PersistentVolume をマウントでき、isolated-sandbox の隔離 Pod は同じ PersistentVolume のマウントに失敗し、Amazon EBS はマウントできた。NFS の PersistentVolume は Amazon FSx for NetApp ONTAP にある](../_assets/images/s3ap-sandbox-storage.svg)
 
-図 4: 隔離 Pod でマウントできたストレージと、できなかったストレージ
+図 4: 隔離 Pod でマウントできたストレージと、できなかったストレージ。Pod と PersistentVolume のアイコンは [Kubernetes コミュニティのアイコン](https://github.com/kubernetes/community/tree/main/icons)(Apache-2.0)
 
 **実機の結果** [実測: 2026-11-10、ap-northeast-1、各ケース 1 回の観測]。EKS Auto Mode のクラスタ(Kubernetes v1.36.4、Trident アドオン v26.6.2-eksbuild.1)で、同じ NFS の PVC(RWX、1 GiB、使い捨て SVM)を通常の Pod と `runtimeClassName: isolated-sandbox` の Pod にマウントした。
 

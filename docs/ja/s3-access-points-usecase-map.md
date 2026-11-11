@@ -256,7 +256,7 @@ NetApp が「50 以上の AWS サービスと Snowflake や Databricks につな
 
 ![図 4: Amazon EKS Auto Mode のクラスタで、通常の Pod 2 本は NetApp Trident の NFS の PersistentVolume をマウントでき、isolated-sandbox の隔離 Pod は同じ PersistentVolume のマウントに失敗し、Amazon EBS はマウントできた。NFS の PersistentVolume は Amazon FSx for NetApp ONTAP にある](../_assets/images/s3ap-sandbox-storage.svg)
 
-図 4: 隔離 Pod でマウントできたストレージと、できなかったストレージ
+図 4: 隔離 Pod でマウントできたストレージと、できなかったストレージ。Pod と PersistentVolume のアイコンは [Kubernetes コミュニティのアイコン](https://github.com/kubernetes/community/tree/main/icons)(Apache-2.0)
 
 **EKS の隔離 Pod(Nitro Sandbox)では、Trident の NFS の PV が使えなかった。** コンテナ作成の段階で失敗し、EBS の PVC は使えた(1 回の観測)。FSx for ONTAP のデータを隔離 Pod で使う選択肢としては、アクセスポイント経由で S3 SDK から読む形もありうる。ただし隔離 Pod からアクセスポイントを呼ぶ構成は、確かめていない [未測定]。観測の詳細は [storage-verification の 9.1](atx-containerization-fsxn-storage-verification.md) にある。サードパーティ CSI の扱いの明記を[文書フィードバック](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259)で、NFS とブロックの対応を機能要望([NFS](https://github.com/aws/containers-roadmap/issues/2911)、[ブロック](https://github.com/aws/containers-roadmap/issues/2912))で公開した。issue の提出は、AWS が受理や優先付けをしたことを意味しない。
 

@@ -107,6 +107,27 @@ ICONS = {
     ),
 }
 
+# Icons that are not AWS assets. The AWS package (07312026, the latest quarterly release when this
+# was written) has an Amazon EKS service icon but no icon for EKS Auto Mode, a pod, or a
+# PersistentVolume; its only EKS resource icon is EKS on Outposts. For the Kubernetes objects the
+# figures use the Kubernetes community icon set, which exists to standardize Kubernetes
+# architecture diagrams and is licensed Apache-2.0 or CC-BY-4.0
+# (https://github.com/kubernetes/community/tree/main/icons). EKS Auto Mode is a mode of Amazon EKS,
+# so it is drawn with the Amazon EKS service icon and a qualifier line, as the naming rule asks.
+#
+# The files live under docs/_assets/icons/, which is gitignored: as with the AWS package, what gets
+# committed is the finished diagram with the icon embedded, not the icon as a file of its own.
+LOCAL_ICON_DIR = ROOT / "docs" / "_assets" / "icons"
+K8S_ICONS_COMMIT = "307ae50e8e4246de172f195c73e3f026b4f0c7ff"
+LOCAL_ICONS = {
+    "k8s_pod": "k8s-pod.svg",
+    "k8s_pv": "k8s-pv.svg",
+}
+LOCAL_ICON_SOURCES = {
+    "k8s_pod": "icons/svg/resources/unlabeled/pod.svg",
+    "k8s_pv": "icons/svg/resources/unlabeled/pv.svg",
+}
+
 # Native sizes. Rescaling is what the AWS icon guidelines forbid, so the size follows the asset:
 # 80 for an architecture (service) icon, 48 for a resource icon.
 ICON_SIZE = {
@@ -122,6 +143,9 @@ ICON_SIZE = {
     "transfer": 80,
     "cloudfront": 80,
     "ebs": 80,
+    # The Kubernetes icons have no prescribed size; 48 matches the AWS resource icons they sit with.
+    "k8s_pod": 48,
+    "k8s_pv": 48,
     "vpc_endpoint": 48,
     "s3_access_point": 48,
 }
@@ -457,20 +481,24 @@ LABELS: dict[str, dict[str, str]] = {
     },
     # --- figure 4: storage for pods isolated with Nitro Sandbox ---
     "f4_cluster": {
-        "ja": "Amazon EKS Auto Mode のクラスタ(Kubernetes 1.36)",
-        "en": "Amazon EKS Auto Mode cluster (Kubernetes 1.36)",
+        "ja": "クラスタ(Kubernetes 1.36)",
+        "en": "Cluster (Kubernetes 1.36)",
+    },
+    "f4_eks": {
+        "ja": "Amazon EKS<br>(Auto Mode)",
+        "en": "Amazon EKS<br>(Auto Mode)",
     },
     "f4_normal": {
-        "ja": "<b>通常の Pod</b><br>2 本、別のノード",
-        "en": "<b>Normal pods</b><br>Two, on different nodes",
+        "ja": "通常の Pod<br>(2 本、別のノード)",
+        "en": "Normal pods<br>(two, on different nodes)",
     },
     "f4_isolated": {
-        "ja": "<b>隔離 Pod</b><br>runtimeClassName:<br>isolated-sandbox",
-        "en": "<b>Isolated pod</b><br>runtimeClassName:<br>isolated-sandbox",
+        "ja": "隔離 Pod<br>(isolated-sandbox)",
+        "en": "Isolated pod<br>(isolated-sandbox)",
     },
     "f4_nfs_pv": {
-        "ja": "<b>NFS の PersistentVolume</b><br>NetApp Trident(ReadWriteMany)",
-        "en": "<b>NFS PersistentVolume</b><br>NetApp Trident (ReadWriteMany)",
+        "ja": "PersistentVolume<br>(NetApp Trident、NFS)",
+        "en": "PersistentVolume<br>(NetApp Trident, NFS)",
     },
     "f4_ebs": {
         "ja": "Amazon EBS<br>(ReadWriteOncePod)",
@@ -494,7 +522,10 @@ LABELS: dict[str, dict[str, str]] = {
             "iSCSI と NVMe/TCP のブロックボリュームは試していない。<br>"
             "※3 <b>ドキュメントの記載</b><br>"
             "Storage with Nitro Sandboxes が挙げるのは Amazon EBS、Amazon EFS、tmpfs を使う CSI ドライバなど。"
-            "サードパーティの CSI ドライバの NFS には触れていない。"
+            "サードパーティの CSI ドライバの NFS には触れていない。<br>"
+            "※4 <b>アイコン</b><br>"
+            "Pod と PersistentVolume は Kubernetes コミュニティのアイコン(Apache-2.0)。"
+            "AWS のアイコンパッケージに EKS Auto Mode 専用のアイコンは無いので、Amazon EKS のアイコンを使った。"
         ),
         "en": (
             "<b>Notes</b><br>"
@@ -506,7 +537,10 @@ LABELS: dict[str, dict[str, str]] = {
             "v26.6.2-eksbuild.1. iSCSI and NVMe/TCP block volumes were not tried.<br>"
             "*3 <b>What the documentation lists</b><br>"
             "Storage with Nitro Sandboxes lists Amazon EBS, Amazon EFS, tmpfs-backed CSI "
-            "drivers, and others. It does not mention NFS from third-party CSI drivers."
+            "drivers, and others. It does not mention NFS from third-party CSI drivers.<br>"
+            "*4 <b>Icons</b><br>"
+            "The pod and PersistentVolume icons are Kubernetes community icons (Apache-2.0). "
+            "The AWS icon package has no icon for EKS Auto Mode, so the Amazon EKS icon is used."
         ),
     },
     "f3_notes": {
@@ -861,31 +895,32 @@ def _consumer_map() -> Diagram:
 def _sandbox_storage() -> Diagram:
     """What an isolated pod could mount, next to what normal pods could.
 
-    The figure carries one observation: the same Trident NFS volume that two normal pods mounted
-    failed in a pod run with `isolated-sandbox`, while an EBS volume mounted in that pod. Colour is
-    not allowed to carry the failure (single-colour arrows), so the edge label says it and the
-    note gives the error text.
+    One observation: the Trident NFS volume that two normal pods mounted failed in a pod run with
+    `isolated-sandbox`, while an EBS volume mounted in that pod. Colour may not carry the failure
+    (single-colour arrows), so the edge label says it and the note gives the error text.
 
-    The two pods sit on one row and the volumes on the row below, so every edge goes down. The NFS
-    volume box is wide enough that the isolated pod's edge lands right of where it leaves, which
-    keeps that edge from running backwards.
+    Every label sits under its icon, so no edge may leave an icon downwards: it would run through
+    the words. Each edge leaves from the right and turns down onto its target's top, and the icons
+    are staggered so that those horizontal runs cross nothing. The normal pods sit lower than the
+    isolated pod for that reason, not because they come later. FSx for ONTAP sits outside the
+    cluster frame because it is outside the cluster, and far enough right that the line down to it
+    clears the two-line label under the PersistentVolume.
     """
     return Diagram(
         name="s3ap-sandbox-storage",
         diagram_id="s3ap-sandbox-storage",
         width=900,
-        height=870,
-        groups=(Group("aws_cloud", "aws_cloud", 20, 20, 860, 830),),
-        frames=(Frame("cluster", "f4_cluster", 40, 70, 820, 360),),
-        boxes=(
-            Box("normal", "f4_normal", 70, 120, 250, 70),
-            Box("isolated", "f4_isolated", 360, 120, 250, 90),
-            Box("nfs_pv", "f4_nfs_pv", 70, 290, 500, 60),
-        ),
-        notes=(Note("notes", "f4_notes", 40, 610, 820, 220),),
+        height=1060,
+        groups=(Group("aws_cloud", "aws_cloud", 20, 20, 860, 1020),),
+        frames=(Frame("cluster", "f4_cluster", 40, 70, 820, 470),),
+        notes=(Note("notes", "f4_notes", 40, 735, 820, 285),),
         nodes=(
-            Node("ebs", "ebs", "f4_ebs", 700, 270),
-            Node("fsx", "fsx_ontap", "f4_fsx", 280, 470),
+            Node("eks", "eks", "f4_eks", 70, 110),
+            Node("isolated", "k8s_pod", "f4_isolated", 330, 130),
+            Node("normal", "k8s_pod", "f4_normal", 150, 300),
+            Node("ebs", "ebs", "f4_ebs", 720, 260),
+            Node("nfs_pv", "k8s_pv", "f4_nfs_pv", 540, 420),
+            Node("fsx", "fsx_ontap", "f4_fsx", 740, 590),
         ),
         edges=(
             Edge(
@@ -893,26 +928,29 @@ def _sandbox_storage() -> Diagram:
                 "normal",
                 "nfs_pv",
                 "f4_e_ok",
-                exit_at=(0.5, 1.0),
+                exit_at=(1.0, 0.5),
                 entry_at=(0.25, 0.0),
-                label_offset=(0, -10),
+                label_at=-0.3,
+                label_offset=(0, -14),
             ),
             Edge(
                 "e2",
                 "isolated",
                 "nfs_pv",
                 "f4_e_fail",
-                exit_at=(0.3, 1.0),
-                entry_at=(0.8, 0.0),
-                label_offset=(0, -14),
+                exit_at=(1.0, 0.75),
+                entry_at=(0.75, 0.0),
+                label_at=-0.45,
+                label_offset=(0, 16),
             ),
             Edge(
                 "e3",
                 "isolated",
                 "ebs",
                 "f4_e_ok",
-                exit_at=(1.0, 0.5),
+                exit_at=(1.0, 0.25),
                 entry_at=(0.5, 0.0),
+                label_at=-0.2,
                 label_offset=(0, -14),
             ),
             Edge(
@@ -920,9 +958,10 @@ def _sandbox_storage() -> Diagram:
                 "nfs_pv",
                 "fsx",
                 "f4_e_nfs",
-                exit_at=(0.5, 1.0),
+                exit_at=(1.0, 0.5),
                 entry_at=(0.5, 0.0),
-                label_offset=(18, 0),
+                label_at=0.45,
+                label_offset=(26, 0),
             ),
         ),
     )
@@ -1000,6 +1039,17 @@ def data_uris(package: Path) -> dict[tuple[str, str], str]:
             path = package / resolved
             if not path.is_file():
                 raise SystemExit(f"build_diagrams: {resolved} missing from {package}")
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            uris[(key, theme)] = f"data:image/svg+xml,{encoded}"
+        for key, name in LOCAL_ICONS.items():
+            path = LOCAL_ICON_DIR / name
+            if not path.is_file():
+                raise SystemExit(
+                    f"build_diagrams: {name} not found at {path.relative_to(ROOT)}.\n"
+                    "  It is a Kubernetes community icon and is deliberately not committed. Fetch it with:\n"
+                    f"  curl -sSf -o {path.relative_to(ROOT)} https://raw.githubusercontent.com/"
+                    f"kubernetes/community/{K8S_ICONS_COMMIT}/{LOCAL_ICON_SOURCES[key]}"
+                )
             encoded = base64.b64encode(path.read_bytes()).decode("ascii")
             uris[(key, theme)] = f"data:image/svg+xml,{encoded}"
     return uris
