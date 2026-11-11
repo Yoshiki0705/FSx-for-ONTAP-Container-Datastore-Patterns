@@ -66,9 +66,12 @@ ICONS = {
     ),
     "ec2": "Architecture-Service-Icons_{d}/Arch_Compute/64/Arch_Amazon-EC2_64.svg",
     "lambda": "Architecture-Service-Icons_{d}/Arch_Compute/64/Arch_AWS-Lambda_64.svg",
-    "ecs": (
-        "Architecture-Service-Icons_{d}/Arch_Containers/64/"
-        "Arch_Amazon-Elastic-Container-Service_64.svg"
+    # A task or pod on Fargate is drawn with the AWS Fargate icon, because Fargate is the compute
+    # that runs the code making the S3 call; the orchestrator goes in the qualifier line. This
+    # follows how the AWS documentation names the pair ("Amazon ECS on AWS Fargate", "Amazon EKS
+    # ... Pods on AWS Fargate"), and the service-name gate then requires "AWS Fargate" in the label.
+    "fargate": (
+        "Architecture-Service-Icons_{d}/Arch_Containers/64/Arch_AWS-Fargate_64.svg"
     ),
     "eks": (
         "Architecture-Service-Icons_{d}/Arch_Containers/64/"
@@ -153,7 +156,7 @@ ICON_SIZE = {
     "fsx_ontap": 80,
     "ec2": 80,
     "lambda": 80,
-    "ecs": 80,
+    "fargate": 80,
     "eks": 80,
     "athena": 80,
     "glue": 80,
@@ -323,12 +326,12 @@ LABELS: dict[str, dict[str, str]] = {
     "aws_region": {"ja": "AWS リージョン", "en": "AWS Region"},
     # --- figure 1: containers reach the volume through an access point ---
     "f1_ecs": {
-        "ja": "Amazon ECS<br>(AWS Fargate)",
-        "en": "Amazon ECS<br>(AWS Fargate)",
+        "ja": "AWS Fargate<br>(Amazon ECS)",
+        "en": "AWS Fargate<br>(Amazon ECS)",
     },
     "f1_eks": {
-        "ja": "Amazon EKS<br>(AWS Fargate)",
-        "en": "Amazon EKS<br>(AWS Fargate)",
+        "ja": "AWS Fargate<br>(Amazon EKS)",
+        "en": "AWS Fargate<br>(Amazon EKS)",
     },
     "f1_endpoint": {
         "ja": "S3 Gateway<br>エンドポイント",
@@ -491,12 +494,12 @@ LABELS: dict[str, dict[str, str]] = {
         "en": "AWS Lambda<br>(outside a VPC)",
     },
     "f3_ecs": {
-        "ja": "Amazon ECS<br>(AWS Fargate)",
-        "en": "Amazon ECS<br>(AWS Fargate)",
+        "ja": "AWS Fargate<br>(Amazon ECS)",
+        "en": "AWS Fargate<br>(Amazon ECS)",
     },
     "f3_eks": {
-        "ja": "Amazon EKS<br>(AWS Fargate)",
-        "en": "Amazon EKS<br>(AWS Fargate)",
+        "ja": "AWS Fargate<br>(Amazon EKS)",
+        "en": "AWS Fargate<br>(Amazon EKS)",
     },
     "f3_ec2": {"ja": "Amazon EC2", "en": "Amazon EC2"},
     "f3_lambda_in": {
@@ -581,8 +584,9 @@ LABELS: dict[str, dict[str, str]] = {
             "マネージドサービスは Internet origin、VPC 内のコンピュートは VPC origin。"
             "origin は作成後に変更できない。<br>"
             "※2 <b>描いていないものは「非対応」ではない</b><br>"
-            "AWS DataSync、AWS Backup、Amazon Macie、Amazon GuardDuty、AWS Storage Gateway などは、"
-            "公開された記載を見つけられなかった。本文の表に調べた範囲を書いた。<br>"
+            "Amazon Macie、Amazon GuardDuty、AWS Storage Gateway などは、アクセスポイント経由で使う"
+            "公開された記載を見つけられなかった。AWS DataSync と AWS Backup は FSx for ONTAP を"
+            "アクセスポイントを通さずに直接扱う(DataSync は NFS / SMB、AWS Backup はボリューム単位)。<br>"
             "※3 <b>根拠は行ごとに違う</b><br>"
             "AWS のドキュメント、本リポジトリや他のリポジトリでの実測、ベンダー公表の区別は本文の表にある。"
         ),
@@ -592,9 +596,10 @@ LABELS: dict[str, dict[str, str]] = {
             "Managed services need Internet origin; compute inside a VPC uses VPC origin. "
             "The origin cannot be changed after creation.<br>"
             "*2 <b>What is not drawn is not \"unsupported\"</b><br>"
-            "AWS DataSync, AWS Backup, Amazon Macie, Amazon GuardDuty, AWS Storage Gateway "
-            "and others: no public statement was found. The table in the text lists what "
-            "was searched.<br>"
+            "Amazon Macie, Amazon GuardDuty, AWS Storage Gateway and others: no public "
+            "statement of use through an access point was found. AWS DataSync and AWS Backup "
+            "work with FSx for ONTAP directly, without an access point (DataSync over NFS / "
+            "SMB, AWS Backup per volume).<br>"
             "*3 <b>The basis differs per row</b><br>"
             "The table in the text separates AWS documentation, measurements in this and "
             "other repositories, and vendor-published statements."
@@ -768,8 +773,8 @@ def _overview() -> Diagram:
         ),
         notes=(Note("notes", "f1_notes", 40, 620, 860, 260),),
         nodes=(
-            Node("ecs", "ecs", "f1_ecs", 70, 110),
-            Node("eks", "eks", "f1_eks", 70, 280),
+            Node("ecs", "fargate", "f1_ecs", 70, 110),
+            Node("eks", "fargate", "f1_eks", 70, 280),
             Node("endpoint", "vpc_endpoint", "f1_endpoint", 300, 296),
             Node("ap", "s3_access_point", "f1_ap", 470, 296),
             Node("fsx", "fsx_ontap", "f1_fsx", 650, 450),
@@ -867,13 +872,13 @@ def _consumer_map() -> Diagram:
         name="s3ap-consumer-map",
         diagram_id="s3ap-consumer-map",
         width=980,
-        height=870,
-        groups=(Group("aws_cloud", "aws_cloud", 10, 10, 960, 850),),
+        height=910,
+        groups=(Group("aws_cloud", "aws_cloud", 10, 10, 960, 890),),
         frames=(
             Frame("frame_internet", "f3_frame_internet", 340, 40, 620, 340),
             Frame("frame_vpc", "f3_frame_vpc", 340, 420, 620, 190),
         ),
-        notes=(Note("notes", "f3_notes", 30, 640, 920, 200),),
+        notes=(Note("notes", "f3_notes", 30, 640, 920, 240),),
         nodes=(
             Node("fsx", "fsx_ontap", "f3_fsx", 50, 60),
             Node("ap_internet", "s3_access_point", "f3_ap_internet", 240, 186),
@@ -885,8 +890,8 @@ def _consumer_map() -> Diagram:
             Node("transfer", "transfer", "f3_transfer", 360, 235),
             Node("cloudfront", "cloudfront", "f3_cloudfront", 510, 235),
             Node("lambda_out", "lambda", "f3_lambda_out", 660, 235),
-            Node("ecs", "ecs", "f3_ecs", 360, 475),
-            Node("eks", "eks", "f3_eks", 510, 475),
+            Node("ecs", "fargate", "f3_ecs", 360, 475),
+            Node("eks", "fargate", "f3_eks", 510, 475),
             Node("ec2", "ec2", "f3_ec2", 660, 475),
             Node("lambda_in", "lambda", "f3_lambda_in", 810, 475),
         ),

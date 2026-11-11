@@ -162,7 +162,7 @@ For monitoring, poll the Lifecycle state, and write and read back a small object
 
 ## 7. Map of integrations
 
-![Figure 3: Consumers by access point origin. From Amazon FSx for NetApp ONTAP the path splits into S3 Access Points with Internet origin and S3 Access Points with VPC origin. Internet origin serves Amazon Athena, AWS Glue, Amazon EMR, Amazon Bedrock, AWS Transfer Family, Amazon CloudFront, and AWS Lambda outside a VPC. VPC origin serves Amazon ECS, Amazon EKS, Amazon EC2, and AWS Lambda in a VPC](../_assets/images/s3ap-consumer-map-en.svg)
+![Figure 3: Consumers by access point origin. From Amazon FSx for NetApp ONTAP the path splits into S3 Access Points with Internet origin and S3 Access Points with VPC origin. Internet origin serves Amazon Athena, AWS Glue, Amazon EMR, Amazon Bedrock, AWS Transfer Family, Amazon CloudFront, and AWS Lambda outside a VPC. VPC origin serves AWS Fargate (Amazon ECS and Amazon EKS), Amazon EC2, and AWS Lambda in a VPC](../_assets/images/s3ap-consumer-map-en.svg)
 
 Figure 3: Consumers grouped by the origin they need. The figure shows services whose origin is known from AWS documentation or a measurement. Their constraints (Athena is read-only, EMR cannot write Iceberg, and so on) and the services not drawn are in the tables of 7.1 to 7.5.
 
@@ -213,7 +213,9 @@ NetApp published a statement that the data connects to more than 50 AWS services
 
 ### 7.5 What no public statement was found for
 
-These are not "unsupported". In what was searched, no public statement exists: AWS DataSync (its S3 location page mentions access points only for S3 on Outposts), AWS Backup, Amazon Macie and Amazon GuardDuty Malware Protection for S3 (both documents assume general purpose buckets), AWS Storage Gateway, Amazon OpenSearch Service (only as a Bedrock vector store), Amazon Comprehend, and Amazon Rekognition.
+AWS DataSync and AWS Backup support FSx for ONTAP itself and are used without an access point. DataSync creates an FSx for ONTAP location and mounts the SVM over NFS (v3) or SMB to transfer data ([DataSync User Guide](https://docs.aws.amazon.com/datasync/latest/userguide/create-ontap-location.html)). AWS Backup backs up volumes ([AWS News Blog, 2022-05](https://aws.amazon.com/blogs/aws/aws-backup-now-supports-amazon-fsx-for-netapp-ontap/)), and since 2026-09 can store those backups in a logically air-gapped vault ([What's New](https://aws.amazon.com/about-aws/whats-new/2026/09/aws-backup-air-gapped-vault-fsx-ontap/)). What was not found is a statement that an access point can be the S3 location or the backup target; the DataSync S3 location page mentions access points only for S3 on Outposts.
+
+These are not "unsupported". In what was searched, no public statement exists of use through an access point: Amazon Macie and Amazon GuardDuty Malware Protection for S3 (both documents assume general purpose buckets), AWS Storage Gateway, Amazon OpenSearch Service (only as a Bedrock vector store), Amazon Comprehend, and Amazon Rekognition.
 
 ---
 
@@ -248,7 +250,7 @@ The evaluation order in detail is in the Hub's [layers of access point authoriza
 
 ## 9. The container check, and combining it with isolated pods
 
-![Figure 1: The path from containers to an FSx for ONTAP volume through S3 Access Points. Amazon ECS and Amazon EKS, both on AWS Fargate, call S3 Access Points (VPC origin) through an S3 gateway endpoint and reach the Amazon FSx for NetApp ONTAP volume. Amazon EC2 uses the same volume over NFS / SMB](../_assets/images/s3ap-container-overview-en.svg)
+![Figure 1: The path from containers to an FSx for ONTAP volume through S3 Access Points. Amazon ECS and Amazon EKS on AWS Fargate call S3 Access Points (VPC origin) through an S3 gateway endpoint and reach the Amazon FSx for NetApp ONTAP volume. Amazon EC2 uses the same volume over NFS / SMB](../_assets/images/s3ap-container-overview-en.svg)
 
 Figure 1: The path from containers to the volume.
 
