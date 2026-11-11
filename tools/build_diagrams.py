@@ -91,6 +91,10 @@ ICONS = {
         "Architecture-Service-Icons_{d}/Arch_Networking-Content-Delivery/64/"
         "Arch_Amazon-CloudFront_64.svg"
     ),
+    "ebs": (
+        "Architecture-Service-Icons_{d}/Arch_Storage/64/"
+        "Arch_Amazon-Elastic-Block-Store_64.svg"
+    ),
     # Resource icons: a single file with no Light/Dark variant, so no `{v}`. Placed at 48.
     "vpc_endpoint": (
         "Resource-Icons_{d}/Res_Networking-Content-Delivery/"
@@ -117,6 +121,7 @@ ICON_SIZE = {
     "bedrock": 80,
     "transfer": 80,
     "cloudfront": 80,
+    "ebs": 80,
     "vpc_endpoint": 48,
     "s3_access_point": 48,
 }
@@ -449,6 +454,60 @@ LABELS: dict[str, dict[str, str]] = {
     "f3_lambda_in": {
         "ja": "AWS Lambda<br>(VPC 内)",
         "en": "AWS Lambda<br>(in a VPC)",
+    },
+    # --- figure 4: storage for pods isolated with Nitro Sandbox ---
+    "f4_cluster": {
+        "ja": "Amazon EKS Auto Mode のクラスタ(Kubernetes 1.36)",
+        "en": "Amazon EKS Auto Mode cluster (Kubernetes 1.36)",
+    },
+    "f4_normal": {
+        "ja": "<b>通常の Pod</b><br>2 本、別のノード",
+        "en": "<b>Normal pods</b><br>Two, on different nodes",
+    },
+    "f4_isolated": {
+        "ja": "<b>隔離 Pod</b><br>runtimeClassName:<br>isolated-sandbox",
+        "en": "<b>Isolated pod</b><br>runtimeClassName:<br>isolated-sandbox",
+    },
+    "f4_nfs_pv": {
+        "ja": "<b>NFS の PersistentVolume</b><br>NetApp Trident(ReadWriteMany)",
+        "en": "<b>NFS PersistentVolume</b><br>NetApp Trident (ReadWriteMany)",
+    },
+    "f4_ebs": {
+        "ja": "Amazon EBS<br>(ReadWriteOncePod)",
+        "en": "Amazon EBS<br>(ReadWriteOncePod)",
+    },
+    "f4_fsx": {
+        "ja": "Amazon FSx for<br>NetApp ONTAP",
+        "en": "Amazon FSx for<br>NetApp ONTAP",
+    },
+    "f4_e_ok": {"ja": "マウントできた", "en": "Mounted"},
+    "f4_e_fail": {"ja": "マウント失敗 ※1", "en": "Mount failed *1"},
+    "f4_e_nfs": {"ja": "NFS", "en": "NFS"},
+    "f4_notes": {
+        "ja": (
+            "<b>補足</b><br>"
+            "※1 <b>コンテナ作成の段階で失敗</b><br>"
+            "failed to fulfil mount request: ... no such file or directory。"
+            "約 6 分で再起動 5 回の CrashLoopBackOff。原因は切り分けていない。<br>"
+            "※2 <b>観測の範囲</b><br>"
+            "2026-11-10、ap-northeast-1、1 回の観測。Trident の EKS アドオン v26.6.2-eksbuild.1。"
+            "iSCSI と NVMe/TCP のブロックボリュームは試していない。<br>"
+            "※3 <b>ドキュメントの記載</b><br>"
+            "Storage with Nitro Sandboxes が挙げるのは Amazon EBS、Amazon EFS、tmpfs を使う CSI ドライバなど。"
+            "サードパーティの CSI ドライバの NFS には触れていない。"
+        ),
+        "en": (
+            "<b>Notes</b><br>"
+            "*1 <b>Failed at container creation</b><br>"
+            "failed to fulfil mount request: ... no such file or directory, then "
+            "CrashLoopBackOff after 5 restarts in about 6 minutes. The cause was not isolated.<br>"
+            "*2 <b>Scope of the observation</b><br>"
+            "2026-11-10, ap-northeast-1, one observation. Trident EKS add-on "
+            "v26.6.2-eksbuild.1. iSCSI and NVMe/TCP block volumes were not tried.<br>"
+            "*3 <b>What the documentation lists</b><br>"
+            "Storage with Nitro Sandboxes lists Amazon EBS, Amazon EFS, tmpfs-backed CSI "
+            "drivers, and others. It does not mention NFS from third-party CSI drivers."
+        ),
     },
     "f3_notes": {
         "ja": (
@@ -799,10 +858,81 @@ def _consumer_map() -> Diagram:
     )
 
 
+def _sandbox_storage() -> Diagram:
+    """What an isolated pod could mount, next to what normal pods could.
+
+    The figure carries one observation: the same Trident NFS volume that two normal pods mounted
+    failed in a pod run with `isolated-sandbox`, while an EBS volume mounted in that pod. Colour is
+    not allowed to carry the failure (single-colour arrows), so the edge label says it and the
+    note gives the error text.
+
+    The two pods sit on one row and the volumes on the row below, so every edge goes down. The NFS
+    volume box is wide enough that the isolated pod's edge lands right of where it leaves, which
+    keeps that edge from running backwards.
+    """
+    return Diagram(
+        name="s3ap-sandbox-storage",
+        diagram_id="s3ap-sandbox-storage",
+        width=900,
+        height=870,
+        groups=(Group("aws_cloud", "aws_cloud", 20, 20, 860, 830),),
+        frames=(Frame("cluster", "f4_cluster", 40, 70, 820, 360),),
+        boxes=(
+            Box("normal", "f4_normal", 70, 120, 250, 70),
+            Box("isolated", "f4_isolated", 360, 120, 250, 90),
+            Box("nfs_pv", "f4_nfs_pv", 70, 290, 500, 60),
+        ),
+        notes=(Note("notes", "f4_notes", 40, 610, 820, 220),),
+        nodes=(
+            Node("ebs", "ebs", "f4_ebs", 700, 270),
+            Node("fsx", "fsx_ontap", "f4_fsx", 280, 470),
+        ),
+        edges=(
+            Edge(
+                "e1",
+                "normal",
+                "nfs_pv",
+                "f4_e_ok",
+                exit_at=(0.5, 1.0),
+                entry_at=(0.25, 0.0),
+                label_offset=(0, -10),
+            ),
+            Edge(
+                "e2",
+                "isolated",
+                "nfs_pv",
+                "f4_e_fail",
+                exit_at=(0.3, 1.0),
+                entry_at=(0.8, 0.0),
+                label_offset=(0, -14),
+            ),
+            Edge(
+                "e3",
+                "isolated",
+                "ebs",
+                "f4_e_ok",
+                exit_at=(1.0, 0.5),
+                entry_at=(0.5, 0.0),
+                label_offset=(0, -14),
+            ),
+            Edge(
+                "e4",
+                "nfs_pv",
+                "fsx",
+                "f4_e_nfs",
+                exit_at=(0.5, 1.0),
+                entry_at=(0.5, 0.0),
+                label_offset=(18, 0),
+            ),
+        ),
+    )
+
+
 DIAGRAMS = (
     _overview(),
     _request_path(),
     _consumer_map(),
+    _sandbox_storage(),
 )
 
 # --- rendering -----------------------------------------------------------------------------------

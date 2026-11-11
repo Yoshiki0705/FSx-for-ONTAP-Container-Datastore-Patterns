@@ -1,1 +1,3 @@
 cfn-lint==1.60.0
+# Eyecatch cards for blog posts (tools/make_eyecatch_cards.py); same pin as the sibling repository.
+Pillow==13.0.0

@@ -81,6 +81,10 @@ diagrams: ## .drawio を再生成し SVG と PNG を書き出す（AWS アイコ
 diagrams-check: ## コミット済みの図が仕様と一致するか（AWS アイコンのパッケージが要る）
 	@$(PYTHON) tools/build_diagrams.py --check
 
+.PHONY: eyecatch
+eyecatch: ## ブログ用の 1200x630 カードを作る（Pillow と macOS のヒラギノ角ゴシックが要る）
+	@$(PYTHON) tools/make_eyecatch_cards.py
+
 .PHONY: gates
 gates: cfn-lint headings role-labels diagram-fonts diagram-flow ai-style test ## どこでも走る検査（CI とフックが呼ぶ）
 

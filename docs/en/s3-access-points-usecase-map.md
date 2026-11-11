@@ -254,6 +254,10 @@ Figure 1: The path from containers to the volume.
 
 On 2026-11-10 in ap-northeast-1, against a disposable SVM and volume, reads, writes, and listing worked from ECS and EKS (1.35) on Fargate [Tested: this repository]. Both the alias and the ARN worked, and the sha256 before and after writing matched. The full results, including visibility from the NFS side, FAILED with `ec2-user`, permissions with a non-root user, and the match with the baseline after teardown, are in [section 5.4 of storage-verification](atx-containerization-fsxn-storage-verification.md). The two defects found (the policy `Resource` and the identity default) are fixed in the templates.
 
+![Figure 4: In an Amazon EKS Auto Mode cluster, two normal pods mounted a NetApp Trident NFS PersistentVolume, an isolated pod with isolated-sandbox failed to mount the same PersistentVolume, and it mounted Amazon EBS. The NFS PersistentVolume is on Amazon FSx for NetApp ONTAP](../_assets/images/s3ap-sandbox-storage-en.svg)
+
+Figure 4: The storage an isolated pod could mount, and the storage it could not
+
 **In an isolated EKS pod (Nitro Sandbox), a Trident NFS PV could not be used.** Container creation failed, while an EBS PVC worked (one observation). Reading the data through an access point with the S3 SDK is one possible option for using FSx for ONTAP data from an isolated pod. This document did not check calling an access point from an isolated pod [Not measured]. The details of the observation are in [section 9.1 of storage-verification](atx-containerization-fsxn-storage-verification.md). The gap in how third-party CSI drivers are covered was filed as [documentation feedback](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259), and NFS and block support as feature requests ([NFS](https://github.com/aws/containers-roadmap/issues/2911), [block](https://github.com/aws/containers-roadmap/issues/2912)). Filing an issue does not mean AWS accepted or prioritized it.
 
 ---
