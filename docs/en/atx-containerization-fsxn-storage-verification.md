@@ -309,7 +309,7 @@ The documented storage options are (source: [Storage with Nitro Sandboxes](https
 
 ![Figure 4: In an Amazon EKS Auto Mode cluster, two normal pods mounted a NetApp Trident NFS PersistentVolume, an isolated pod with isolated-sandbox failed to mount the same PersistentVolume, and it mounted Amazon EBS. The NFS PersistentVolume is on Amazon FSx for NetApp ONTAP](../_assets/images/s3ap-sandbox-storage-en.svg)
 
-Figure 4: The storage an isolated pod could mount, and the storage it could not. The pod and PersistentVolume icons are [Kubernetes community icons](https://github.com/kubernetes/community/tree/main/icons) (Apache-2.0)
+Figure 4: The storage an isolated pod could mount, and the storage it could not. The pod and PersistentVolume icons are [Kubernetes community icons](https://github.com/kubernetes/community/tree/main/icons) (Apache-2.0); the Trident logo is from the [NetApp/trident](https://github.com/NetApp/trident) repository
 
 **Results** [Tested: 2026-11-10, ap-northeast-1, one observation per case]. On an EKS Auto Mode cluster (Kubernetes v1.36.4, Trident add-on v26.6.2-eksbuild.1), I mounted the same NFS PVC (RWX, 1 GiB, disposable SVM) into normal pods and into a pod with `runtimeClassName: isolated-sandbox`.
 

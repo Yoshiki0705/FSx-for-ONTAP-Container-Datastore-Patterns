@@ -118,15 +118,34 @@ ICONS = {
 # The files live under docs/_assets/icons/, which is gitignored: as with the AWS package, what gets
 # committed is the finished diagram with the icon embedded, not the icon as a file of its own.
 LOCAL_ICON_DIR = ROOT / "docs" / "_assets" / "icons"
-K8S_ICONS_COMMIT = "307ae50e8e4246de172f195c73e3f026b4f0c7ff"
+# NetApp Trident is drawn with the logo its own repository publishes (logo/trident.png in
+# https://github.com/NetApp/trident, the file its README shows). It is the only logo file there:
+# there is no dark variant, and recolouring a product mark is not ours to do, so on the dark canvas
+# the same logo sits on a white plate instead (PLATED_ICONS).
 LOCAL_ICONS = {
     "k8s_pod": "k8s-pod.svg",
     "k8s_pv": "k8s-pv.svg",
+    "trident": "netapp-trident.png",
 }
-LOCAL_ICON_SOURCES = {
-    "k8s_pod": "icons/svg/resources/unlabeled/pod.svg",
-    "k8s_pv": "icons/svg/resources/unlabeled/pv.svg",
+LOCAL_ICON_URLS = {
+    "k8s_pod": (
+        "https://raw.githubusercontent.com/kubernetes/community/"
+        "307ae50e8e4246de172f195c73e3f026b4f0c7ff/icons/svg/resources/unlabeled/pod.svg"
+    ),
+    "k8s_pv": (
+        "https://raw.githubusercontent.com/kubernetes/community/"
+        "307ae50e8e4246de172f195c73e3f026b4f0c7ff/icons/svg/resources/unlabeled/pv.svg"
+    ),
+    "trident": (
+        "https://raw.githubusercontent.com/NetApp/trident/"
+        "6fe65ee071e24485b85ccfed2d17c703fcec7977/logo/trident.png"
+    ),
 }
+# A data URI needs the type that matches the bytes. Getting it wrong exports a broken-image
+# placeholder while still reporting success.
+MIME_BY_SUFFIX = {".png": "image/png", ".svg": "image/svg+xml"}
+# Marks drawn on a white plate on the dark canvas, because the mark has no dark variant.
+PLATED_ICONS = {"trident"}
 
 # Native sizes. Rescaling is what the AWS icon guidelines forbid, so the size follows the asset:
 # 80 for an architecture (service) icon, 48 for a resource icon.
@@ -146,6 +165,8 @@ ICON_SIZE = {
     # The Kubernetes icons have no prescribed size; 48 matches the AWS resource icons they sit with.
     "k8s_pod": 48,
     "k8s_pv": 48,
+    # The Trident logo is portrait (350x387); aspect=fixed fits it inside the square.
+    "trident": 48,
     "vpc_endpoint": 48,
     "s3_access_point": 48,
 }
@@ -266,10 +287,13 @@ def note_style(stroke: str, ink: str) -> str:
     so it aligns left and to the top rather than inheriting `box_style`'s centring. No edge touches
     it: a note annotates the figure, it is not a step in the flow, so the direction gate never sees
     it.
+
+    The corner radius is absolute. draw.io's default arc is a share of the shorter side, so a tall
+    notes box grows a corner wide enough to run through the first letters of its heading.
     """
     return (
-        f"rounded=1;whiteSpace=wrap;html=1;strokeColor={stroke};fillColor=none;"
-        f"fontColor={ink};fontSize={FONT_BODY};verticalAlign=top;align=left;"
+        f"rounded=1;absoluteArcSize=1;arcSize=24;whiteSpace=wrap;html=1;strokeColor={stroke};"
+        f"fillColor=none;fontColor={ink};fontSize={FONT_BODY};verticalAlign=top;align=left;"
         "spacingLeft=10;spacingRight=10;spacingTop=8;"
     )
 
@@ -497,9 +521,14 @@ LABELS: dict[str, dict[str, str]] = {
         "en": "Isolated pod<br>(isolated-sandbox)",
     },
     "f4_nfs_pv": {
-        "ja": "PersistentVolume<br>(NetApp Trident、NFS)",
-        "en": "PersistentVolume<br>(NetApp Trident, NFS)",
+        "ja": "PersistentVolume<br>(NFS、ReadWriteMany)",
+        "en": "PersistentVolume<br>(NFS, ReadWriteMany)",
     },
+    "f4_trident": {
+        "ja": "NetApp Trident<br>(CSI ドライバ)",
+        "en": "NetApp Trident<br>(CSI driver)",
+    },
+    "f4_e_provision": {"ja": "払い出し", "en": "Provisions"},
     "f4_ebs": {
         "ja": "Amazon EBS<br>(ReadWriteOncePod)",
         "en": "Amazon EBS<br>(ReadWriteOncePod)",
@@ -524,7 +553,8 @@ LABELS: dict[str, dict[str, str]] = {
             "Storage with Nitro Sandboxes が挙げるのは Amazon EBS、Amazon EFS、tmpfs を使う CSI ドライバなど。"
             "サードパーティの CSI ドライバの NFS には触れていない。<br>"
             "※4 <b>アイコン</b><br>"
-            "Pod と PersistentVolume は Kubernetes コミュニティのアイコン(Apache-2.0)。"
+            "Pod と PersistentVolume は Kubernetes コミュニティのアイコン(Apache-2.0)、"
+            "Trident は NetApp/trident リポジトリのロゴ。"
             "AWS のアイコンパッケージに EKS Auto Mode 専用のアイコンは無いので、Amazon EKS のアイコンを使った。"
         ),
         "en": (
@@ -539,8 +569,9 @@ LABELS: dict[str, dict[str, str]] = {
             "Storage with Nitro Sandboxes lists Amazon EBS, Amazon EFS, tmpfs-backed CSI "
             "drivers, and others. It does not mention NFS from third-party CSI drivers.<br>"
             "*4 <b>Icons</b><br>"
-            "The pod and PersistentVolume icons are Kubernetes community icons (Apache-2.0). "
-            "The AWS icon package has no icon for EKS Auto Mode, so the Amazon EKS icon is used."
+            "The pod and PersistentVolume icons are Kubernetes community icons (Apache-2.0); "
+            "the Trident logo is from the NetApp/trident repository. The AWS icon package "
+            "has no icon for EKS Auto Mode, so the Amazon EKS icon is used."
         ),
     },
     "f3_notes": {
@@ -910,15 +941,16 @@ def _sandbox_storage() -> Diagram:
         name="s3ap-sandbox-storage",
         diagram_id="s3ap-sandbox-storage",
         width=900,
-        height=1060,
-        groups=(Group("aws_cloud", "aws_cloud", 20, 20, 860, 1020),),
+        height=1110,
+        groups=(Group("aws_cloud", "aws_cloud", 20, 20, 860, 1070),),
         frames=(Frame("cluster", "f4_cluster", 40, 70, 820, 470),),
-        notes=(Note("notes", "f4_notes", 40, 735, 820, 285),),
+        notes=(Note("notes", "f4_notes", 40, 735, 820, 335),),
         nodes=(
             Node("eks", "eks", "f4_eks", 70, 110),
             Node("isolated", "k8s_pod", "f4_isolated", 330, 130),
             Node("normal", "k8s_pod", "f4_normal", 150, 300),
             Node("ebs", "ebs", "f4_ebs", 720, 260),
+            Node("trident", "trident", "f4_trident", 330, 420),
             Node("nfs_pv", "k8s_pv", "f4_nfs_pv", 540, 420),
             Node("fsx", "fsx_ontap", "f4_fsx", 740, 590),
         ),
@@ -951,6 +983,15 @@ def _sandbox_storage() -> Diagram:
                 exit_at=(1.0, 0.25),
                 entry_at=(0.5, 0.0),
                 label_at=-0.2,
+                label_offset=(0, -14),
+            ),
+            Edge(
+                "e5",
+                "trident",
+                "nfs_pv",
+                "f4_e_provision",
+                exit_at=(1.0, 0.5),
+                entry_at=(0.0, 0.5),
                 label_offset=(0, -14),
             ),
             Edge(
@@ -1046,12 +1087,12 @@ def data_uris(package: Path) -> dict[tuple[str, str], str]:
             if not path.is_file():
                 raise SystemExit(
                     f"build_diagrams: {name} not found at {path.relative_to(ROOT)}.\n"
-                    "  It is a Kubernetes community icon and is deliberately not committed. Fetch it with:\n"
-                    f"  curl -sSf -o {path.relative_to(ROOT)} https://raw.githubusercontent.com/"
-                    f"kubernetes/community/{K8S_ICONS_COMMIT}/{LOCAL_ICON_SOURCES[key]}"
+                    "  It is a third-party mark and is deliberately not committed. Fetch it with:\n"
+                    f"  curl -sSf -o {path.relative_to(ROOT)} {LOCAL_ICON_URLS[key]}"
                 )
             encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-            uris[(key, theme)] = f"data:image/svg+xml,{encoded}"
+            mime = MIME_BY_SUFFIX[path.suffix.lower()]
+            uris[(key, theme)] = f"data:{mime},{encoded}"
     return uris
 
 
@@ -1160,7 +1201,8 @@ def render(
         vertex(
             node.cid,
             label(node.label, lang),
-            icon_style(uris[(node.icon, theme)], p.ink),
+            icon_style(uris[(node.icon, theme)], p.ink)
+            + ("imageBackground=#FFFFFF;" if theme == "dark" and node.icon in PLATED_ICONS else ""),
             node.x,
             node.y,
             size,
