@@ -431,6 +431,13 @@ There is one indirect effect. For a GPU-backed AI workload that keeps shared dat
 
 So on Auto Mode managed nodes an NFS PV works and an iSCSI PV does not. Because you cannot choose the AMI or install software on the node, config 2's `PrepareNodesForIscsi` approach cannot fill the gap. If you need iSCSI (block), use nodes whose AMI you control, such as a managed node group. Adding a managed node group to an Auto Mode cluster also worked (the custom AMI in 9.1; I added the vpc-cni, kube-proxy, and coredns add-ons for it). This is one observation on Auto Mode and may change with a later AMI.
 
+**Answer from AWS Support** [Not measured: AWS Support's answer (2026-11-12). Not tested in this repository]. The conclusion above (managed nodes cannot use an iSCSI PV; use a managed node group when you need iSCSI) matches AWS Support's answer. Support reproduced the same error and found no `iscsiadm`, `iscsid`, or `/etc/iscsi/initiatorname.iscsi` on Bottlerocket (EKS Auto, Standard) 2026.10.31 managed nodes. The answer included two points that this repository has not tested.
+
+- In a cluster that mixes Auto Mode and a managed node group, enabling Trident nodePrep fails on the managed nodes, which cannot install the iSCSI tools. The Trident node pods then do not start, so the managed nodes cannot mount NFS PVCs either. In a mixed cluster, do not use nodePrep; install the iSCSI tools with the managed node group's launch template user data. Config 2's `PrepareNodesForIscsi` uses user data and installs the same packages as Support's example (`lsscsi`, `iscsi-initiator-utils`, `device-mapper-multipath`).
+- The label `eks.amazonaws.com/compute-type` controls whether a pod goes to Auto Mode managed nodes or to a managed node group (source: [Control if a workload is deployed on EKS Auto Mode nodes](https://docs.aws.amazon.com/eks/latest/userguide/associate-workload.html)). In 9.1 I used a `kubernetes.io/hostname` nodeSelector, and Auto Mode admission returned a warning.
+
+Support forwarded a request to document this limit on the Auto Mode pages to the service team (with no commitment on whether or when). I filed the same request as an [EKS User Guide issue](https://github.com/awsdocs/amazon-eks-user-guide/issues/1261).
+
 ### 9.3 Trident 26.10 and Kubernetes 1.37
 
 - EKS added Kubernetes 1.37 on 2026-10-01 (source: [Document history](https://docs.aws.amazon.com/eks/latest/userguide/doc-history.html)). Trident 26.10 supports Kubernetes 1.27 through 1.37 (source: [Trident requirements](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html)). The template's `KubernetesVersion` pattern accepts 1.37.

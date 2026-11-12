@@ -431,6 +431,13 @@ DRA(Dynamic Resource Allocation)の対象は NVIDIA GPU と EFA で、ストレ�
 
 したがって、Auto Mode の管理ノードでは NFS の PV は使え、iSCSI の PV は使えない。AMI を選べず、ノードにソフトウェアを導入できないため、構成 2 の `PrepareNodesForIscsi` の方式で補うこともできない。iSCSI(ブロック)が要る場合は、managed node group など AMI を制御できるノードを使う。Auto Mode のクラスタに managed node group を足す形でも動いた(9.1 のカスタム AMI。そのときは vpc-cni、kube-proxy、coredns のアドオンを追加した)。Auto Mode でのこの結果は 1 回の観測で、将来の AMI 更新で変わりうる。
 
+**AWS サポートへの問い合わせの回答** [未測定: AWS サポートの回答(2026-11-12)。本リポジトリでは試していない]。上の結論(管理ノードでは iSCSI の PV を使えず、iSCSI が要るなら managed node group を使う)は、AWS サポートの回答と一致した。サポートは、Bottlerocket(EKS Auto, Standard)2026.10.31 の管理ノードに `iscsiadm`、`iscsid`、`/etc/iscsi/initiatorname.iscsi` が無く、同じエラーになることを再現している。回答には、本リポジトリで確かめていない点が 2 つあった。
+
+- Auto Mode と managed node group を併用するクラスタで Trident の nodePrep を有効にすると、管理ノードでは iSCSI のツールを導入できない。nodePrep の失敗で Trident のノード側の Pod が起動せず、管理ノードでは NFS の PVC もマウントできなくなる。併用するときは nodePrep を使わず、managed node group の起動テンプレートのユーザーデータで iSCSI のツールを導入する。構成 2 の `PrepareNodesForIscsi` はユーザーデータで導入する方式で、入れるパッケージ(`lsscsi`、`iscsi-initiator-utils`、`device-mapper-multipath`)もサポートの例と同じ。
+- Pod を管理ノードに置くか managed node group に置くかは、ラベル `eks.amazonaws.com/compute-type` で制御できる(出典: [Control if a workload is deployed on EKS Auto Mode nodes](https://docs.aws.amazon.com/eks/latest/userguide/associate-workload.html))。9.1 では `kubernetes.io/hostname` の nodeSelector を使い、Auto Mode の受付で警告が出た。
+
+Auto Mode のドキュメントにこの制約を書くよう求める要望は、サポート経由で担当部署に送られた(反映の有無と時期は約束されていない)。同じ要望を [EKS ユーザーガイドの issue](https://github.com/awsdocs/amazon-eks-user-guide/issues/1261) にも出した。
+
 ### 9.3 Trident 26.10 と Kubernetes 1.37
 
 - EKS は Kubernetes 1.37 を 2026-10-01 に追加した(出典: [Document history](https://docs.aws.amazon.com/eks/latest/userguide/doc-history.html))。Trident 26.10 は Kubernetes 1.27〜1.37 に対応する(出典: [Trident requirements](https://docs.netapp.com/us-en/trident/trident-get-started/requirements.html))。テンプレートの `KubernetesVersion` のパターンは 1.37 を許容する。
