@@ -260,7 +260,7 @@ AWS DataSync と AWS Backup は FSx for ONTAP そのものに対応しており�
 
 図 4: 隔離 Pod でマウントできたストレージと、できなかったストレージ。Pod と PersistentVolume のアイコンは [Kubernetes コミュニティのアイコン](https://github.com/kubernetes/community/tree/main/icons)(Apache-2.0)、Trident のロゴは [NetApp/trident](https://github.com/NetApp/trident) リポジトリのもの
 
-**EKS の隔離 Pod(Nitro Sandbox)では、Trident の NFS の PV が使えなかった。** コンテナ作成の段階で失敗し、EBS の PVC は使えた(1 回の観測)。FSx for ONTAP のデータを隔離 Pod で使う選択肢としては、アクセスポイント経由で S3 SDK から読む形もありうる。ただし隔離 Pod からアクセスポイントを呼ぶ構成は、確かめていない [未測定]。観測の詳細は [storage-verification の 9.1](atx-containerization-fsxn-storage-verification.md) にある。サードパーティ CSI の扱いの明記を[文書フィードバック](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259)で、NFS とブロックの対応を機能要望([NFS](https://github.com/aws/containers-roadmap/issues/2911)、[ブロック](https://github.com/aws/containers-roadmap/issues/2912))で公開した。issue の提出は、AWS が受理や優先付けをしたことを意味しない。
+**EKS の隔離 Pod(Nitro Sandbox)では、Trident の NFS の PV が使えなかった。** コンテナ作成の段階で失敗し、EBS の PVC は使えた(1 回の観測)。隔離 Pod からアクセスポイントを S3 SDK で呼ぶ形は、EKS Pod Identity と IRSA のどちらでも読み書きと一覧ができた(2026-11-12、1 回の観測)。ただし Nitro Sandbox はネットワークを既定で 100 Mbps に絞り、制限を外しても書き込みは 50〜60 MB/s だった。カスタム AMI のノードでは、iSCSI の PV をファイルシステムとして隔離 Pod に渡せた。観測の詳細は [storage-verification の 9.1](atx-containerization-fsxn-storage-verification.md) にある。サードパーティ CSI の扱いの明記を[文書フィードバック](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259)で、NFS とブロックの対応を機能要望([NFS](https://github.com/aws/containers-roadmap/issues/2911)、[ブロック](https://github.com/aws/containers-roadmap/issues/2912))で公開した。issue の提出は、AWS が受理や優先付けをしたことを意味しない。
 
 ---
 
@@ -277,7 +277,7 @@ AWS DataSync と AWS Backup は FSx for ONTAP そのものに対応しており�
 | コピー | 同一アクセスポイント内のみ [文書]。UploadPartCopy は、文書上は対応だが `NoSuchKey` で失敗した | [文書]、[実測: 他の Spoke](同上) |
 | チェックサム | 検証するが保存せず、返さない。ETag は MD5 ではない | [文書] |
 | 途中のマルチパート | ボリュームのバックアップに含まれない。使った容量はファイルシステムの `StorageUsed` に出て、ボリュームには出ない | [文書] |
-| スループット | ファイルシステムのプロビジョンド スループットに依存。遅延は「数十ミリ秒」[文書]。128 MBps の第 1 世代 Single-AZ、Internet origin で、1 MB の GetObject の P50 は VPC 外の Lambda から 73 ms、手元のクライアントから 175 ms(並列度 10)。並列度 25 以上で P99 が 1 秒を超えた。VPC origin の経路はこのベンチマークでは測っていない。サイジングの目安で、サービスの上限ではない | [文書]、[実測: 他の Spoke]([ベンチマーク](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/s3ap-benchmark-results.en.md)、2026-05) |
+| スループット | ファイルシステムのプロビジョンド スループットに依存。遅延は「数十ミリ秒」[文書]。128 MBps の第 1 世代 Single-AZ、Internet origin で、1 MB の GetObject の P50 は VPC 外の Lambda から 73 ms、手元のクライアントから 175 ms(並列度 10)。並列度 25 以上で P99 が 1 秒を超えた。VPC origin では、同じ 128 MBps のファイルシステムで、ECS / EKS on Fargate からの書き込みはクライアントの大きさによらず約 130 MB/s、読み込みは 276〜557 MB/s だった(本リポジトリ、2026-11-12、1 回ずつ)。EC2 からの記録は S3-Burst にある。サイジングの目安で、サービスの上限ではない | [文書]、[実測: 他の Spoke]([ベンチマーク](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/s3ap-benchmark-results.en.md)、2026-05)、[実測]([storage-verification の 5.5](atx-containerization-fsxn-storage-verification.md)) |
 | 料金 | FSx の料金に加え、アクセスポイント経由の S3 リクエストとデータ転送が課金される。単価は[FSx for ONTAP の料金](https://aws.amazon.com/fsx/netapp-ontap/pricing/)と S3 の料金ページで、リージョンと日付を確かめる。VPC 内の Lambda から Internet origin を使うなら NAT の料金も加わる | [文書]、[公表] |
 | ボリューム数の上限 | 第 1 世代と第 2 世代の HA ペア 1 組で 500 → 491、HA ペア 2 組で 1,000 → 975、12 組で 903 | [文書] |
 | 変更できないもの | origin、ファイルシステムの ID | [文書]、[実測: 本リポジトリ](ID は作成後に変更できない) |
@@ -302,7 +302,7 @@ AWS DataSync と AWS Backup は FSx for ONTAP そのものに対応しており�
 2. ID を決める。ボリュームのセキュリティスタイルに合わせ、SVM で解決できるかを ONTAP 側で確かめる。`root` は避ける。
 3. ONTAP のバージョン、S3 プロトコル、ボリュームのマウント、ボリューム数の余裕を 6.2 で確かめる。
 4. 使い捨てのボリュームで、作成 → 書き込み → 読み戻しの sha256 比較 → 一覧 → 撤収までを 1 回通す。テンプレートは `templates/containers-ecs-fargate-fsxn-s3ap.yaml` と `templates/containers-eks-fargate-fsxn-s3ap.yaml` で、`FileSystemUnixUser` は必須である。手順と期待する結果は [storage-verification の 5.4](atx-containerization-fsxn-storage-verification.md) にある。
-5. 本番の前に、NFS / SMB のクライアントがある場合は、S3 の書き込みが NFS からいつ見えるかを自環境で測る。本リポジトリの観測は、約 28 秒後と約 100 秒後のどちらでも見えた、までである。
+5. 本番の前に、NFS / SMB のクライアントがある場合は、S3 の書き込みが NFS からいつ見えるかを自環境で測る。本リポジトリでは、NFSv4.1 で PutObject が返った時点で見えていた(p50 1.5 ms、既定のマウントでも同程度、[storage-verification の 5.6](atx-containerization-fsxn-storage-verification.md))。キャッシュの振る舞いはマウントのオプションとアクセスのパターンで変わる。
 6. S3 のイベント通知を前提にした設計は、定期ポーリングに置き換える。
 
 この文書は技術的な検討の材料で、セキュリティやコンプライアンスの評価に代わるものではない。本リポジトリの実測は、使い捨ての環境と合成データで行った。

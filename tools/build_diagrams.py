@@ -577,6 +577,58 @@ LABELS: dict[str, dict[str, str]] = {
             "has no icon for EKS Auto Mode, so the Amazon EKS icon is used."
         ),
     },
+    # --- figure 5: security groups for Pods and NetworkPolicy, side by side ---
+    "f5_cluster": {
+        "ja": "クラスタ(EKS Auto Mode、Kubernetes 1.36)",
+        "en": "Cluster (EKS Auto Mode, Kubernetes 1.36)",
+    },
+    "f5_client": {
+        "ja": "クライアントの Pod<br>(role=client、SG: app)",
+        "en": "Client pod<br>(role=client, SG: app)",
+    },
+    "f5_other": {
+        "ja": "ラベルが違う Pod<br>(role=other、SG: app)",
+        "en": "Pod with another label<br>(role=other, SG: app)",
+    },
+    "f5_server": {
+        "ja": "サーバの Pod<br>(SG: srv)",
+        "en": "Server pod<br>(SG: srv)",
+    },
+    "f5_endpoint": {"ja": "S3 Gateway<br>エンドポイント", "en": "S3 gateway<br>endpoint"},
+    "f5_ap": {"ja": "S3 Access Points<br>(VPC origin)", "en": "S3 Access Points<br>(VPC origin)"},
+    "f5_fsx": {"ja": "Amazon FSx for<br>NetApp ONTAP", "en": "Amazon FSx for<br>NetApp ONTAP"},
+    "f5_e_s3": {"ja": "S3 API ※1", "en": "S3 API *1"},
+    "f5_e_ok": {"ja": "8080 届いた", "en": "8080 reached"},
+    "f5_e_np": {"ja": "8080 NetworkPolicy で拒否", "en": "8080 denied by NetworkPolicy"},
+    "f5_notes": {
+        "ja": (
+            "<b>補足</b><br>"
+            "※1 <b>AWS のリソースへは Pod の SG</b><br>"
+            "SG app の送信は S3 のプレフィックスリストへの 443 とサーバの SG への 8080 だけ。"
+            "S3 Access Points は使え、SVM の 443 と 2049 には届かなかった。隔離 Pod でも同じ。<br>"
+            "※2 <b>Pod 間は NetworkPolicy</b><br>"
+            "サーバは role=client からの 8080 だけ受ける。SecurityGroupPolicy の無い Pod は、"
+            "NetworkPolicy が許してもサーバの SG で止まった。<br>"
+            "※3 <b>Trident の PV は Pod の SG の対象外</b><br>"
+            "NFS はノードがマウントする。送信を許さない SG の Pod でも PV への書き込みは成功した。<br>"
+            "※4 <b>観測の範囲</b><br>"
+            "2026-11-12、ap-northeast-1a、各 1 回。Pod のアイコンは Kubernetes コミュニティのもの(Apache-2.0)。"
+        ),
+        "en": (
+            "<b>Notes</b><br>"
+            "*1 <b>Security groups for AWS resources</b><br>"
+            "SG app allows egress only to 443 on the S3 prefix list and 8080 on the server's SG. "
+            "S3 Access Points worked; 443 and 2049 to the SVM did not. The same held for an isolated pod.<br>"
+            "*2 <b>NetworkPolicy between Pods</b><br>"
+            "The server accepts 8080 only from role=client. A Pod with no SecurityGroupPolicy was stopped "
+            "by the server's SG even though the NetworkPolicy allowed it.<br>"
+            "*3 <b>Trident PVs are outside the Pod's SG</b><br>"
+            "The node mounts NFS. A Pod whose SG allows no egress still wrote to its PV.<br>"
+            "*4 <b>Scope</b><br>"
+            "2026-11-12, ap-northeast-1a, one observation each. Pod icons are Kubernetes community icons "
+            "(Apache-2.0)."
+        ),
+    },
     "f3_notes": {
         "ja": (
             "<b>補足</b><br>"
@@ -1013,11 +1065,50 @@ def _sandbox_storage() -> Diagram:
     )
 
 
+def _pod_network_controls() -> Diagram:
+    """Which control stopped which connection: NetworkPolicy between Pods, security groups to AWS.
+
+    The client Pod has two edges and both leave its right side, at different heights, so the run to
+    the endpoint stays level while the run to the server turns down onto its top. The Pod with the
+    other label sits level with the server, so its edge goes straight right into the server's side.
+    FSx for ONTAP sits outside the cluster frame, far enough right that the line down to it clears
+    the two-line label under the access point.
+    """
+    return Diagram(
+        name="s3ap-pod-network-controls",
+        diagram_id="s3ap-pod-network-controls",
+        width=1000,
+        height=880,
+        groups=(Group("aws_cloud", "aws_cloud", 20, 20, 960, 840),),
+        frames=(Frame("cluster", "f5_cluster", 40, 70, 500, 440),),
+        notes=(Note("notes", "f5_notes", 40, 580, 920, 260),),
+        nodes=(
+            Node("client", "k8s_pod", "f5_client", 110, 140),
+            Node("other", "k8s_pod", "f5_other", 110, 360),
+            Node("server", "k8s_pod", "f5_server", 390, 360),
+            Node("endpoint", "vpc_endpoint", "f5_endpoint", 600, 140),
+            Node("ap", "s3_access_point", "f5_ap", 740, 140),
+            Node("fsx", "fsx_ontap", "f5_fsx", 860, 400),
+        ),
+        edges=(
+            Edge("e1", "client", "endpoint", "f5_e_s3", exit_at=(1.0, 0.25), entry_at=(0.0, 0.25),
+                 label_at=0.3, label_offset=(0, -14)),
+            Edge("e2", "client", "server", "f5_e_ok", exit_at=(1.0, 0.75), entry_at=(0.5, 0.0),
+                 label_at=-0.4, label_offset=(0, 16)),
+            Edge("e3", "other", "server", "f5_e_np", exit_at=(1.0, 0.5), entry_at=(0.0, 0.5),
+                 label_offset=(0, -14)),
+            Edge("e4", "endpoint", "ap", "", exit_at=(1.0, 0.25), entry_at=(0.0, 0.25)),
+            Edge("e5", "ap", "fsx", "", exit_at=(1.0, 0.5), entry_at=(0.5, 0.0)),
+        ),
+    )
+
+
 DIAGRAMS = (
     _overview(),
     _request_path(),
     _consumer_map(),
     _sandbox_storage(),
+    _pod_network_controls(),
 )
 
 # --- rendering -----------------------------------------------------------------------------------
