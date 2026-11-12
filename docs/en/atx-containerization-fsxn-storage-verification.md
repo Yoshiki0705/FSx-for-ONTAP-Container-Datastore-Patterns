@@ -2,8 +2,8 @@
 
 **Purpose**: Determine from primary sources the feasibility of four ways to use Amazon FSx for NetApp ONTAP as a data area on container runtimes after AWS Transform containerization (ECS on EC2 / EKS on EC2 / ECS on Fargate / EKS on Fargate), and express the feasible ones as CloudFormation templates taken through static verification.
 
-**Last Updated**: 2026-10-29
-**Status**: Literature research + CloudFormation authoring + static verification (cfn-lint) + small-scale hands-on deployments of configs 1 and 2 (3.3 and 4.3). No hands-on deployment of configs 3 and 4 (next stage)
+**Last Updated**: 2026-11-12
+**Status**: Literature research + CloudFormation authoring + static verification (cfn-lint) + small-scale hands-on deployments of all four configs (3.3, 4.3, 5.4) + S3 Access Points performance and visibility from containers (5.5, 5.6) + Nitro Sandbox and Auto Mode security groups for Pods (9.1, 9.5)
 
 Related: [Containerization (ECS / EKS) Derivation and FSx for ONTAP Integration](atx-containerization-fsxn-derivation.md). This memo follows that research to express "if it can be used, how to configure it" in CloudFormation.
 
@@ -181,7 +181,7 @@ Because access is via the S3 SDK, the app must be written for object access. It 
 | Reusing the existing S3 Gateway endpoint | With `CreateS3GatewayEndpoint=false` the stack deployed without creating an endpoint, and the calls above succeeded |
 | `FileSystemIdentity=ec2-user` (control) | On a new SVM the create API returned success, the Lifecycle went to FAILED about 45 seconds later, and the reason was that the user could not be looked up in ONTAP. Deleted and confirmed gone |
 
-**From the NFS side (multiprotocol)**: the same volume was mounted on an EC2 host with the config 1 template (NFS v4.1, port 2049 only). Objects written through S3 appeared as files over NFS with matching sha256 (owner root, group daemon, mode 644). A file written over NFS was readable with S3 GetObject and appeared in ListObjectsV2. An NFS read about 28 seconds and another about 100 seconds after the S3 PutObject both saw the object. Visibility at shorter intervals was not measured [Not measured].
+**From the NFS side (multiprotocol)**: the same volume was mounted on an EC2 host with the config 1 template (NFS v4.1, port 2049 only). Objects written through S3 appeared as files over NFS with matching sha256 (owner root, group daemon, mode 644). A file written over NFS was readable with S3 GetObject and appeared in ListObjectsV2. An NFS read about 28 seconds and another about 100 seconds after the S3 PutObject both saw the object. The 28 seconds is when the first look happened, not a measured delay (the object was already visible, so it is only an upper bound). Millisecond-scale measurements are in 5.6.
 
 **Non-root user (config 3)**: checked on a separate disposable SVM and volume (UNIX style, 1 GiB). The SVM admin password was set at SVM creation. From an EC2 instance in the VPC, the local UNIX user `s3ap_app` (UID 1001) was created through the SVM management endpoint with the ONTAP REST API (`vsadmin`, `POST /api/name-services/unix-users`). A new SVM already has `root`, `nobody`, and `pcuser`. The volume used mode bits only: `app/` (owner 1001, 755), `shared-ro/` (root, 755, one existing file), `public.txt` (root, 644), and `secret.txt` (root, 600). Config 3 was deployed with `FileSystemUnixUser=s3ap_app`.
 
@@ -211,6 +211,57 @@ One snag was on the ONTAP side. A `chown 1001` from an NFSv4.1 client left the o
 
 After teardown, the SVM, volumes, backups, access points, VPC endpoints, OIDC providers, ECS / EKS clusters, CloudFormation stacks, the FSx security group ingress rules, and the network interface count in this VPC (72) matched the baseline.
 
+### 5.5 S3 Access Points throughput measured from containers
+
+**Environment** [Tested: 2026-11-11 23:29 to 2026-11-12 00:12 UTC, ap-northeast-1a, one measurement per point, spread not converged]
+
+| Item | Value |
+|---|---|
+| File system | The existing SINGLE_AZ_1 (first generation), 1 HA pair, 128 MBps throughput capacity, 1024 GiB SSD, 3,072 SSD IOPS (automatic), ONTAP 9.18.1P6. DataRead / DataWrite were 0 for the 24 hours before |
+| Volume | 100 GiB on a disposable SVM, UNIX style, storage efficiency off, tiering policy NONE |
+| Access point | VPC origin, `FileSystemIdentity=root` (a measurement condition), through the existing S3 gateway endpoint, addressed by ARN |
+| Harness | `scripts/measure_s3_throughput.py` from the sibling S3-Burst repository (commit fdfe813), unchanged. boto3 1.44.0, Python 3.12, 30 s per point, 5 s warm-up, retries off (503s are counted), incompressible random data for writes |
+| Clients | ECS Fargate (0.5 vCPU / 2 GB, 2 vCPU / 4 GB, 8 vCPU / 16 GB), EKS Fargate (2 vCPU, 5 GB provisioned), and an EC2 c5n.2xlarge control, all in 1a |
+
+The 0.5 vCPU task first had 1 GB and was killed for running out of memory (exit code 137) at 64 concurrent 8 MiB requests. I remeasured it with 2 GB.
+
+**Results (MB/s)**
+
+| Client | 8 MiB write (concurrency 16) | 8 MiB read (concurrency 16) | 1 MiB write (concurrency 64) | 1 MiB read (concurrency 64) | Amazon S3 from the same client, 8 MiB read (concurrency 16) |
+|---|---|---|---|---|---|
+| ECS Fargate 0.5 vCPU | 129.7 | 276.2 | 50.2 | 189.1 | 289.7 |
+| ECS Fargate 2 vCPU | 129.3 | 493.2 | 115.3 | 310.7 | 450.4 |
+| ECS Fargate 8 vCPU | 129.8 | 535.9 | 130.4 | 330.4 | 768.9 |
+| EKS Fargate 2 vCPU | 129.7 | 557.0 | Not measured | Not measured | Not measured |
+| EC2 c5n.2xlarge (control) | 129.7 | 485.1 | 130.5 | Not measured | Not measured |
+
+No point returned a 503 (SlowDown / ServiceUnavailable). S3-Burst's record on the same kind of file system (first generation, 128 MBps) is 129.4 MB/s write and 480.9 MB/s read for 8 MiB at concurrency 16 on a c5n.2xlarge, and 131.2 MB/s write for 1 MiB at concurrency 64 on a c5n.9xlarge ([throughput-iops-concurrency.md](https://github.com/Yoshiki0705/S3-Burst-on-ONTAP-Files/blob/main/docs/ja/verification/throughput-iops-concurrency.md), Japanese, 2026-09-01). This run's EC2 control is within 1% of those, so the container figures can be read against the S3-Burst record.
+
+- **Writes stopped at about 130 MB/s regardless of client size.** That is the ceiling set by the 128 MBps purchased throughput, the same conclusion S3-Burst reached. Raising concurrency from 16 to 64 did not add throughput; the 8 MiB p50 grew from about 1.0 s to about 4.0 s (it shows as queueing, not as 503s).
+- **Reads changed with client size.** At 0.5 vCPU even Amazon S3 gave about 290 MB/s, so the client was the limit. At 8 vCPU the access point gave 536 MB/s and Amazon S3 769 MB/s, so there the gap is on the access point side.
+- **The 0.5 vCPU task wrote 1 MiB objects at 50 MB/s.** The same task wrote to Amazon S3 at 181 to 189 MB/s. My guess is that many slow requests in flight on little CPU is the cause; I did not isolate it.
+- **Small objects** (64 KiB, 8 vCPU): 446 req/s for writes and 677 req/s for reads at concurrency 64, the same level as S3-Burst's about 420 / 600 req/s.
+- **Per-request latency** (p50 at concurrency 1): 160 to 167 ms for 1 MiB writes, 239 to 254 ms for 8 MiB writes, 45 to 46 ms for 1 MiB reads. This is shorter than S3-Burst's 331 to 364 ms for writes (2026-09; that record has no ONTAP version). I did not find out why.
+- **File system CloudWatch** (largest 1-minute value during the run): CPUUtilization 79%, FileServerDiskThroughputUtilization 107%, NetworkThroughputUtilization 357%.
+
+**503s seen once, before the measurement**: on 2026-11-11 from 17:44 to 18:01 UTC, 5 to 7% of PutObject / GetObject calls returned 503 ServiceUnavailable after about 2.1 s, even at concurrency 1 against an idle file system, with alias or ARN and with path or virtual addressing. Amazon S3 from the same host was 0 of 60. About five hours later the same access point, a newly created one, and Fargate tasks in 1a and 1c all gave 0, and the measurement above came after that. The window overlaps an AWS Health EC2 operational event (ap-northeast-1, mainly apne1-az1, including ECS / Fargate task launch failures), but I did not establish a cause. It is a reason to retry 503s in the application.
+
+**What this table does not say**: one measurement per point, spread not converged. Multi-AZ, second generation, throughput capacity changes, Internet origin, several tasks at once, multipart upload, and ranged GetObject were not measured. The read phase's seed objects repeat one byte (the harness's behavior); volume storage efficiency was off.
+
+### 5.6 How soon a write becomes visible between S3 and NFSv4.1
+
+**Environment** [Tested: 2026-11-12 00:11 to 00:16 UTC, the same volume as 5.5, n=30 each (n=20 for the Fargate writer)]. The EC2 host mounted the volume twice over NFSv4.1, once with `actimeo=0` and once with default options. The host clock is synchronized to the Amazon Time Sync Service.
+
+| Direction | Measured | p50 | Max |
+|---|---|---|---|
+| S3 to NFS (host writes, stat by name) | From PutObject returning until the file shows with the expected size | `actimeo=0` 1.5 ms, default 1.6 ms | `actimeo=0` 2.1 ms, default 2.3 ms |
+| NFS to S3 (host writes and fsyncs) | From close until HeadObject returns 200 | 40 ms | 111 ms |
+| S3 to NFS (a Fargate task writes, host lists) | From the writer starting PutObject until the name appears in the host's `listdir` | 210 ms (the writer's own PutObject took p50 214 ms) | 259 ms |
+
+An object written through S3 was visible over NFSv4.1 by the time PutObject returned. With default mount options there was no delay either, whether looked up by name or by listing the directory (this one measurement). The Fargate row compares two clocks; their offset was not measured.
+
+The sibling S3-Burst repository measured PutObject to NFS at p50 9 ms over NFSv3 (`actimeo=0`), and recorded that on a default mount a new file can stay invisible for up to about a minute in a directory the client already listed ([s3ap-nfs-visibility.md](https://github.com/Yoshiki0705/S3-Burst-on-ONTAP-Files/blob/main/docs/en/verification/s3ap-nfs-visibility.md), 2026-08-09). I did not see that delay over NFSv4.1 here, but client caching depends on mount options, protocol version, and access pattern. An application that relies on directory listings over a default mount should check its own environment. A multipart upload is not visible over NFS until Complete (S3-Burst's record).
+
 ---
 
 ## 6. Four Configurations × Storage Pattern Matrix
@@ -238,8 +289,10 @@ Confirmed that `make cfn-lint` (cfn-lint, `templates/*.yaml`) passes with exit 0
 | V1 | Deploying the four configurations and data connectivity | Config 2 was checked on 2026-10-29 (4.3) and configs 1, 3, and 4 on 2026-11-10 (3.3, 5.4) [Tested] |
 | V2 | Current Trident EKS add-on name and version | On 2026-10-29 in ap-northeast-1, `netapp_trident-operator` existed, the default was v26.6.2-eksbuild.1, and the highest supported Kubernetes version was 1.36 [Tested]. Names and versions change, so reconfirm before deploying. Trident 26.10 and Kubernetes 1.37 are in 9.3 |
 | V3 | Whether EKS Pod Identity works on Fargate | Resolved: it cannot be used for Pods on Fargate [Documented] ([Pod Identity restrictions](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html), checked 2026-11-10). This is why this memo uses IRSA |
-| V4 | Mapping of the S3 access point UNIX user to ONTAP-side permissions | With `root` reads and writes worked, and with `ec2-user`, which the SVM cannot resolve, the access point went to FAILED. With a local SVM user (non-root), reads and writes were narrowed by the mode bits (5.4) [Tested]. The mapping with NFSv4 ACLs or Active Directory users (NTFS) has not been checked [Not measured] |
-| V5 | Effective throughput via the S3 access point | Docs state "depends on the file system's provisioned throughput". Not measured [Not measured] |
+| V4 | Mapping of the S3 access point UNIX user to ONTAP-side permissions | With `root` reads and writes worked, and with `ec2-user`, which the SVM cannot resolve, the access point went to FAILED. With a local SVM user (non-root), reads and writes were narrowed by the mode bits (5.4) [Tested]. For Windows identities (NTFS), the sibling FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns repository records that a local SMB user reads and writes even with zero domain controllers, that NTFS deny ACLs apply per identity, and that `<DOMAIN>\user` reaches AVAILABLE but every call returns 503 ([portal-identity-verification-results.md](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/en/portal-identity-verification-results.md), measurement 4, 2026-08-26). A domain account with a reachable domain controller was attempted on 2026-11-12, but the SVM could not be joined to a newly created AWS Managed Microsoft AD, so it remains unconfirmed (below). NFSv4 ACLs were not checked [Not measured] |
+| V5 | Effective throughput via the S3 access point | Measured from containers (ECS / EKS on Fargate) and EC2 (5.5) [Tested]. Writes stopped at about 130 MB/s on 128 MBps capacity; reads were 276 to 557 MB/s depending on client size |
+
+**Where the V4 domain account stopped** [Tested: 2026-11-12, ap-northeast-1, one observation]. I created a disposable AWS Managed Microsoft AD (Standard) and joined a disposable SVM through the FSx API. The SVM went to MISCONFIGURED, and the only reason given was that it could not be created within the specified Active Directory. Creating the CIFS server directly on the same SVM with the ONTAP REST API failed with `RESULT_ERROR_LDAPSERVER_INVALID_CREDENTIALS`. The domain controllers answered on ports 88 and 389, and Kerberos pre-authentication succeeded (a wrong password changed the error to a Kerberos pre-authentication error). An LDAP simple bind from the host with the same administrator credentials succeeded. The `user@domain` form and `security.session_security` set to `seal` gave the same result. The symptom matches NetApp's [CONTAP-821088](https://kb.netapp.com/on-prem/ontap/da/NAS/NAS-Issues/CONTAP-821088) (after Microsoft's October 2026 domain controller updates, LDAP binds fail with Invalid Credentials when the SVM's AD LDAP session security is `none`). I did not confirm that the new Managed AD's domain controllers have that update, and I did not finish trying workarounds. A 128 MBps file system allows six SVMs, and a seventh could not be created (`ServiceLimitExceeded`).
 
 ### 7.1 Deployment prerequisites (the stage before hands-on verification)
 
@@ -284,7 +337,7 @@ If hands-on verification confirms feasibility, this set of artifacts (CloudForma
 
 ## 9. EKS and Container Updates, October–November 2026, and Their Effect on These Configurations
 
-**Scope of the survey**: on 2026-11-10 I read in full the EKS User Guide document history (entries from 2026-10-10 on), the two AWS What's New posts (DRA, Gateway API), the official documentation for each feature, and the NetApp Trident 26.10 release notes and requirements page. For KubeCon North America 2026 (Nov 9–12) I saw only search-result summaries, not the announcements themselves [Not measured]. The same day in ap-northeast-1 I checked the EKS add-on versions (9.3), Nitro Sandbox with Trident PVs (9.1), and Auto Mode with Trident (9.2) on real infrastructure. Everything else below is [Documented]; nothing else here was run in this repository.
+**Scope of the survey**: on 2026-11-10 I read in full the EKS User Guide document history (entries from 2026-10-10 on), the two AWS What's New posts (DRA, Gateway API), the official documentation for each feature, and the NetApp Trident 26.10 release notes and requirements page. For KubeCon North America 2026 (Nov 9–12) I saw only search-result summaries, not the announcements themselves [Not measured]. The same day in ap-northeast-1 I checked the EKS add-on versions (9.3), Nitro Sandbox with Trident PVs (9.1), and Auto Mode with Trident (9.2) on real infrastructure. On 2026-11-12 I added checks of S3 Access Points and iSCSI from isolated pods (9.1) and of Auto Mode security groups for Pods (9.5). Everything else below is [Documented]; nothing else here was run in this repository.
 
 Trident driver choice (`ontap-nas` vs `ontap-san`, and the Windows-nodes-only SMB PV) is in the hub's [container data store selection](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/en/reference/decision-trees/container-datastore-selection.md). That page does not cover Nitro Sandbox, Auto Mode, or Trident 26.10, so this chapter is the delta. <!-- spoke-checked: ontap-nas -->
 
@@ -294,6 +347,7 @@ Trident driver choice (`ontap-nas` vs `ontap-san`, and the Windows-nodes-only SM
 | DRA support in EKS Auto Mode and Karpenter | 9.2 | None |
 | Trident 26.10 and Kubernetes 1.37 | 9.3 | None |
 | Auto Mode Gateway API, Argo CD capability updates, `ec2:CopyVolumes` | 9.4 | None |
+| Auto Mode security groups for Pods (2026-11) | 9.5 | None (Fargate Pods are out of scope; calling S3 Access Points from Auto Mode Pods is in 9.5) |
 
 ### 9.1 Isolated pods with Nitro Sandbox, and storage
 
@@ -320,13 +374,43 @@ Figure 4: The storage an isolated pod could mount, and the storage it could not.
 | Control: an isolated pod using only `emptyDir` | Worked. The kernel inside the pod was 6.18.54 against 6.18.56 on the normal node, so it runs on a separate kernel |
 | Control: an isolated pod mounts an Amazon EBS PVC (the Auto Mode EBS CSI) | Worked. Write and read-back succeeded |
 
-Isolated pods worked on the same cluster and node type (c8a.large), and an EBS PVC mounted. Only the Trident NFS PV failed. That matches the fact that the storage page does not list Trident. AWS's sample collection has three blueprints for persistent storage in isolated pods: `ebs`, `efs`, and `s3-files` (source: [sample-eks-nitro-sandbox storage](https://github.com/aws-samples/sample-eks-nitro-sandbox/tree/main/examples/storage)). I found no published procedure for using FSx for ONTAP as persistent storage for an isolated pod. AWS's [Containers Blog](https://aws.amazon.com/blogs/containers/aws-nitro-sandboxes-hardware-enforced-workload-isolation-on-amazon-eks/) says CSI volumes are delivered into the VM the same way they reach a regular pod, yet the Trident NFS PV was not delivered in this observation. The [Compute Blog](https://aws.amazon.com/blogs/compute/nitro-sandboxes-hardware-isolation-for-every-eks-pod-ecs-task-and-ec2-workload/) says a sandbox reaches storage the same way an EC2 instance does (EBS for persistent volumes, S3 and EFS over the network). Calling S3 Access Points from an isolated pod with the S3 SDK reads as within that statement, but it was not tried [Not measured] (both read on 2026-11-11). I did not isolate the cause (for example, NodePublish completing on the host while the mount path never reaches the sandbox is a guess); Trident's info-level log has no record of it. This is one observation; reproduction and behavior on other versions are unconfirmed.
+Isolated pods worked on the same cluster and node type (c8a.large), and an EBS PVC mounted. Only the Trident NFS PV failed. That matches the fact that the storage page does not list Trident. AWS's sample collection has three blueprints for persistent storage in isolated pods: `ebs`, `efs`, and `s3-files` (source: [sample-eks-nitro-sandbox storage](https://github.com/aws-samples/sample-eks-nitro-sandbox/tree/main/examples/storage)). I found no published procedure for using FSx for ONTAP as persistent storage for an isolated pod. AWS's [Containers Blog](https://aws.amazon.com/blogs/containers/aws-nitro-sandboxes-hardware-enforced-workload-isolation-on-amazon-eks/) says CSI volumes are delivered into the VM the same way they reach a regular pod, yet the Trident NFS PV was not delivered in this observation. The [Compute Blog](https://aws.amazon.com/blogs/compute/nitro-sandboxes-hardware-isolation-for-every-eks-pod-ecs-task-and-ec2-workload/) says a sandbox reaches storage the same way an EC2 instance does (EBS for persistent volumes, S3 and EFS over the network). Calling S3 Access Points from an isolated pod with the S3 SDK reads as within that statement, and I tested it on 2026-11-12 ("S3 Access Points from an isolated pod" below). I did not isolate the cause (for example, NodePublish completing on the host while the mount path never reaches the sandbox is a guess); Trident's info-level log has no record of it. This is one observation; reproduction and behavior on other versions are unconfirmed.
 
-Whether an iSCSI PV can be handed to an isolated pod was not tested, because iSCSI itself was unavailable on the Auto Mode node (9.2). A pod with `sandbox.amazonaws.com/network-isolated: "true"` has no network device, and the page states that EFS is unavailable. I infer that network-reached FSx for ONTAP is unreachable for the same reason, but I did not test it.
+A pod with `sandbox.amazonaws.com/network-isolated: "true"` has no network device, and the page states that EFS is unavailable. I infer that network-reached FSx for ONTAP is unreachable for the same reason, but I did not test it.
 
-**Public tracking** [filed 2026-11-10]. The page opens by saying storage works through "standard Kubernetes CSI drivers" and does not mention NFS volumes from a third-party CSI driver. I filed the clarification as [documentation feedback](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259), NFS volume support as a [feature request](https://github.com/aws/containers-roadmap/issues/2911), and iSCSI / NVMe/TCP block volume support as a [separate feature request](https://github.com/aws/containers-roadmap/issues/2912). The block request states that iSCSI and NVMe/TCP in an isolated pod were not tested. Filing an issue does not mean AWS accepted or prioritized it.
+**S3 Access Points from an isolated pod** [Tested: 2026-11-12, ap-northeast-1, Auto Mode on Kubernetes v1.36.5, one observation per case]. Against the access point from 5.5 (VPC origin), an isolated pod with no Cedar policy ran three PutObject calls (one with a prefix), GetObject with a sha256 comparison, and ListObjectsV2 with a delimiter.
 
-The S3 Access Points object API used by configs 3 and 4 is an SDK call over the network, so in principle a sandboxed pod can use it. Authentication needs care. In isolated mode the service account token is not replicated into the sandbox, and IMDS returns no credentials (only five placement paths respond). EKS Pod Identity credentials are allowed. I have not confirmed that config 4's IRSA (which uses the service account token) works in an isolated-mode pod; a Pod Identity design is the straightforward one on paper. As V3 notes, Pod Identity on Fargate is separately not measured.
+| Case | Result |
+|---|---|
+| Isolated pod + EKS Pod Identity | Worked. The sha256 matched and the listing honored the prefix. The kernel inside the pod was 6.18.54 |
+| Isolated pod + IRSA | Worked. The token file was present inside the pod, and AssumeRoleWithWebIdentity authenticated |
+| Normal pod + Pod Identity / IRSA (control) | Both worked. Kernel 6.18.56 |
+
+The documentation says isolated mode does not replicate the service account token into the sandbox, and that with a Cedar policy IRSA needs `--with-irsa` ([Pod Identity and credentials](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing-metadata-credentials.html)). In an isolated pod with no policy, the IRSA token did arrive in this observation. A configuration with a policy was not tested.
+
+**Throughput from an isolated pod** (the 5.5 harness, 8 MiB, concurrency 16, a c5a.xlarge node, 2 vCPU / 4 GiB pod, 1a). Nitro Sandbox throttles networking by default to 100 Mbps and 1,500 packets per second, and the documentation says to raise both before benchmarking ([Resource isolation and throttling](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing-resource-isolation.html)).
+
+| Setting | Write (MB/s) | Read (MB/s) |
+|---|---|---|
+| Default throttle | 12.4 | 8.6 |
+| 1 Gbps and 15,000 packets per second (the documentation's example) | 58.0 | 60.1 |
+| Throttle `disabled` (two runs) | 47.8, 53.9 | 260.3, 255.7 |
+| Normal pod on the same node (control) | 129.6 | 264.6 |
+
+With the default throttle, writes stopped at about 12.5 MB/s, as documented. With the throttle off, reads matched the normal pod, but writes stayed at 50 to 60 MB/s with a p99 of about 10 seconds. Both runs showed the same pattern; I did not isolate the cause. Not measured: other node types, pod sizes, concurrency levels, and long sustained transfers.
+
+**Block volumes (iSCSI) in an isolated pod** [Tested: 2026-11-12, ap-northeast-1, one observation per case]. Auto Mode nodes have no iSCSI tools (9.2). The documentation says isolated pods outside Auto Mode need a custom AMI with the Nitro Sandbox runtime and `EnclaveOptions.Enabled=true` ([Create and update a Nitro Sandbox AMI](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing-ami-create-update.html)). I built an AMI from the EKS-optimized Amazon Linux 2023 AMI (1.36.5-20261107) with `install-pod-isolation.sh` from [amazon-eks-ami](https://github.com/awslabs/amazon-eks-ami) (commit cb447b9, guest image 2026-11-06, Firecracker v1.18.0) and the same iSCSI / multipath preparation as config 2. I ran it as a one-node c5a.xlarge managed node group joined to the same Auto Mode cluster. The node carried `eks.amazonaws.com/nitro-sandbox=true`, and Trident's node pod registered.
+
+| Case | Result |
+|---|---|
+| Normal pod mounts an iSCSI PVC (ext4) | Worked. It appeared as a multipath device |
+| Isolated pod mounts an iSCSI PVC (ext4) | **Worked.** Inside the pod it appeared as virtio-blk `/dev/vdd` (1 GiB). A marker and a file the isolated pod wrote read back with matching sha256 from a normal pod after the isolated pod was deleted |
+| Isolated pod uses an iSCSI PVC with `volumeMode: Block` | **Failed.** `/dev/xvdp` appeared, but with the same device number as a 5 MiB partition of the guest's root disk, not the 1 GiB device. Writes returned `Operation not permitted` |
+| NVMe/TCP backend | Could not be created (`no NVMe data LIFs found on SVM`). FSx for ONTAP NVMe/TCP applies to second-generation file systems with six or fewer HA pairs ([Provisioning NVMe/TCP for Linux](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/provision-nvme-linux.html)), and this file system is first generation [Not measured] |
+
+So an iSCSI PV used as a file system reached an isolated pod on a custom-AMI node, unlike the Trident NFS PV in the table above. Auto Mode nodes cannot run this configuration, and building and updating the AMI becomes your work. A raw block volume did not reach the pod. One observation; AMI or runtime updates may change it.
+
+**Public tracking** [filed 2026-11-10]. The page opens by saying storage works through "standard Kubernetes CSI drivers" and does not mention NFS volumes from a third-party CSI driver. I filed the clarification as [documentation feedback](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259), NFS volume support as a [feature request](https://github.com/aws/containers-roadmap/issues/2911), and iSCSI / NVMe/TCP block volume support as a [separate feature request](https://github.com/aws/containers-roadmap/issues/2912). The block request said that, at filing time, iSCSI and NVMe/TCP in an isolated pod had not been tested. On 2026-11-12 I confirmed that on a custom-AMI node an iSCSI PV used as a file system reaches the pod and a raw block volume does not (table above). Filing an issue does not mean AWS accepted or prioritized it.
 
 The sandbox limitations (startup failure with `hostNetwork: true`, no `hostUsers: false`, no GPU, a per-node vCPU density cap, and so on) probably do not apply to Trident's node pod itself, because that pod uses the normal runtime and only application pods select the sandbox. The documentation does not say this explicitly.
 
@@ -345,7 +429,7 @@ There is one indirect effect. For a GPU-backed AI workload that keeps shared dat
 | Mounting the NFS PV in a pod | **Worked.** Pods on two nodes shared a marker. On a new node it failed for tens of seconds with `CSINode … does not contain driver` until the Trident node pod registered, then succeeded |
 | Mounting the iSCSI PV in a pod | **Failed.** `unable to attach: open-iscsi tools not found on host`. `tridentctl get node` showed empty IQN and SERVICES, and the log said `Could not read initiatorname.iscsi; perhaps iSCSI is not installed?` |
 
-So on Auto Mode managed nodes an NFS PV works and an iSCSI PV does not. Because you cannot choose the AMI or install software on the node, config 2's `PrepareNodesForIscsi` approach cannot fill the gap. If you need iSCSI (block), use nodes whose AMI you control, such as a managed node group. This is one observation on Auto Mode and may change with a later AMI.
+So on Auto Mode managed nodes an NFS PV works and an iSCSI PV does not. Because you cannot choose the AMI or install software on the node, config 2's `PrepareNodesForIscsi` approach cannot fill the gap. If you need iSCSI (block), use nodes whose AMI you control, such as a managed node group. Adding a managed node group to an Auto Mode cluster also worked (the custom AMI in 9.1; I added the vpc-cni, kube-proxy, and coredns add-ons for it). This is one observation on Auto Mode and may change with a later AMI.
 
 ### 9.3 Trident 26.10 and Kubernetes 1.37
 
@@ -359,6 +443,38 @@ So on Auto Mode managed nodes an NFS PV works and an iSCSI PV does not. Because 
 - Gateway API in EKS Auto Mode (2026-10): ALB / NLB traffic control; it does not touch the storage path.
 - EKS Capability for Argo CD notifications, the ApplicationSet webhook, and the source hydrator (2026-10 to 11): as 4.2 says, TridentBackendConfig / StorageClass / PVC cannot be created by CloudFormation and are applied with kubectl or similar after the stack completes. Applying them through GitOps is a possible option, but I have not tried it here. <!-- spoke-checked: helm -->
 - `ec2:CopyVolumes` (2026-10-26): lets the Auto Mode EBS CSI create a PVC from an existing PVC without a snapshot. It applies to EBS volumes and does not involve FSx for ONTAP PVs.
+
+### 9.5 Auto Mode security groups for Pods and NetworkPolicy
+
+EKS Auto Mode added security groups for Pods in 2026-11. It needs Kubernetes 1.36 or later and is included in Auto Mode pricing (source: [What's New](https://aws.amazon.com/about-aws/whats-new/2026/11/amazon-eks-auto-mode-security-groups-for-pods/)). How it works, per the documentation (source: [Assign security groups to individual Pods in EKS Auto Mode](https://docs.aws.amazon.com/eks/latest/userguide/auto-sgp.html)):
+
+- A `SecurityGroupPolicy` in `eks.amazonaws.com/v1` selects Pods by label or service account. A selected Pod gets its own branch network interface through a DRA resource claim, and only the specified security groups are evaluated.
+- It is a different resource from `vpcresources.k8s.aws/v1beta1` used outside Auto Mode, and manifests are not portable between them.
+- At most one policy can match a Pod. Pod-to-Pod traffic on the same node is evaluated by security groups too.
+- Traffic to IMDS, the EKS Pod Identity Agent, kubelet probes, and CoreDNS is not evaluated.
+- The cluster role needs `ec2:CreateNetworkInterfacePermission`.
+
+On dividing the roles, EKS Best Practices (written for the VPC CNI, before Auto Mode) strongly recommends security groups for Pods to control network access to AWS services outside the cluster, and says to consider network policies for Pod-to-Pod (East/West) traffic (source: [Security Groups Per Pod](https://docs.aws.amazon.com/eks/latest/best-practices/sgpp.html)). Auto Mode network policy is turned on with `enable-network-policy-controller: "true"` in the `amazon-vpc-cni` ConfigMap (source: [Use Network Policies with EKS Auto Mode](https://docs.aws.amazon.com/eks/latest/userguide/auto-net-pol.html)).
+
+![Figure 5: In an Amazon EKS Auto Mode cluster, a client pod with SG app reached Amazon FSx for NetApp ONTAP through the S3 gateway endpoint and S3 Access Points (VPC origin), and reached port 8080 on a server pod with SG srv. Port 8080 from a pod with another label was denied by NetworkPolicy](../_assets/images/s3ap-pod-network-controls-en.svg)
+
+Figure 5: NetworkPolicy between Pods, Pod security groups toward AWS resources. Pod icons are [Kubernetes community icons](https://github.com/kubernetes/community/tree/main/icons) (Apache-2.0)
+
+**Results** [Tested: 2026-11-12, ap-northeast-1a, Kubernetes v1.36.5, one observation per case]. Against the access point from 5.5, with Pod Identity, each Pod ran a 256 KiB PutObject / GetObject / ListObjectsV2 and tried TCP 443 and 2049 to the SVM management endpoint. All security groups were disposable; the shared FSx for ONTAP security group was not changed (it accepts the whole VPC CIDR).
+
+| Pod security group | S3 Access Points | ONTAP 443 / NFS 2049 |
+|---|---|---|
+| Egress only 443 to the S3 prefix list | Worked (sha256 matched, listing worked) | Blocked |
+| No egress | Failed | Blocked |
+| S3 prefix list + 443 / 2049 to the FSx security group (by security group ID) | Worked | Connected |
+| Isolated pod (isolated-sandbox) + the first row's security group | Worked | Blocked |
+
+| Checked | Result |
+|---|---|
+| A Trident NFS PV mounted in a Pod whose security group allows no egress | A 1 MiB write and sync succeeded, while 443 to the SVM from the same Pod was blocked. The node mounts the PV over NFS, so the Pod's security group does not apply to it |
+| A NetworkPolicy (the server accepts 8080 only from `role=client` Pods) together with the server's security group (8080 only from the client security group) | Only the Pod allowed by both reached the server. A Pod with a different label was stopped by the NetworkPolicy, and a Pod with no SecurityGroupPolicy was stopped by the server's security group. All three reached S3 Access Points |
+
+A Pod that uses S3 Access Points can carry a security group that limits egress to the S3 prefix list, and this held for an isolated pod too. A path the node uses, such as a Trident PV, cannot be narrowed by the Pod's security group; narrow it with the node's security group and the ONTAP export policy. With NetworkPolicy for Pod-to-Pod traffic and security groups for traffic to AWS resources, both took effect, as the second table shows. Not measured: referencing the Pod's security group in the FSx for ONTAP security group's ingress (not changed because it is shared), Fargate, IPv6, more than five policies, and large-scale scheduling. In this observation, the interface carrying the Pod's security group did not appear in `describe-network-interfaces`.
 
 ---
 

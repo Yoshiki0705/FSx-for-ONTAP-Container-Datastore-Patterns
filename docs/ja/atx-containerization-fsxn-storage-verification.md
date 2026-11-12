@@ -2,8 +2,8 @@
 
 **目的**: AWS Transform でコンテナ化した後の実行環境(ECS on EC2 / EKS on EC2 / ECS on Fargate / EKS on Fargate)で、Amazon FSx for NetApp ONTAP をデータ領域として使う 4 構成の実現性を一次情報で確定し、実現するものは CloudFormation テンプレート化して静的検証まで行う。
 
-**最終更新**: 2026-10-29
-**ステータス**: 文献調査 + CloudFormation 作成 + 静的検証(cfn-lint)+ 構成 1・2 の実機デプロイ(小規模、3.3 と 4.3)。構成 3・4 の実機デプロイは未実施(次段階)
+**最終更新**: 2026-11-12
+**ステータス**: 文献調査 + CloudFormation 作成 + 静的検証(cfn-lint)+ 4 構成の実機デプロイ(小規模、3.3、4.3、5.4)+ コンテナからの S3 Access Points の性能と可視化(5.5、5.6)+ Nitro Sandbox と Auto Mode の Security Groups for Pods(9.1、9.5)
 
 関連: [コンテナ化(ECS/EKS)への派生と FSx for ONTAP の連携可否](atx-containerization-fsxn-derivation.md)。本メモはその調査を受けて「使えるなら、どう構成するか」を CloudFormation に落とす。
 
@@ -181,7 +181,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 | 既存の S3 Gateway エンドポイントの再利用 | `CreateS3GatewayEndpoint=false` でエンドポイントを作らずにデプロイでき、上の呼び出しが通った |
 | `FileSystemIdentity=ec2-user`(対照) | 新しい SVM で作成 API は成功を返し、約 45 秒後に Lifecycle が FAILED、理由は「ONTAP でユーザーを検索できなかった」。削除して消えたことを確認した |
 
-**NFS 側からの確認(マルチプロトコル)**: 同じボリュームを構成 1 のテンプレート(NFS v4.1、2049 のみ)で EC2 ホストにマウントした。S3 で書いたオブジェクトは NFS ではファイルとして見え、sha256 が一致した(所有者は root、グループは daemon、モード 644)。NFS で書いたファイルは S3 の GetObject で読め、ListObjectsV2 にも出た。S3 の PutObject の約 28 秒後と約 100 秒後のどちらの NFS 読み取りでも見えた。それより短い間隔の可視性は測っていない [未測定]。
+**NFS 側からの確認(マルチプロトコル)**: 同じボリュームを構成 1 のテンプレート(NFS v4.1、2049 のみ)で EC2 ホストにマウントした。S3 で書いたオブジェクトは NFS ではファイルとして見え、sha256 が一致した(所有者は root、グループは daemon、モード 644)。NFS で書いたファイルは S3 の GetObject で読め、ListObjectsV2 にも出た。S3 の PutObject の約 28 秒後と約 100 秒後のどちらの NFS 読み取りでも見えた。この 28 秒は最初に見に行った時刻で、遅延の測定ではない(その時点で既に見えていたという上限)。ミリ秒単位の測定は 5.6 にある。
 
 **非 root ユーザーでの権限(構成 3)**: 別の使い捨て SVM とボリューム(UNIX スタイル、1 GiB)で確認した。SVM の管理者パスワードは SVM 作成時に指定し、VPC 内の EC2 から SVM の管理エンドポイントへ ONTAP REST API(`vsadmin`)で、ローカル UNIX ユーザー `s3ap_app`(UID 1001)を作成した(`POST /api/name-services/unix-users`)。新しい SVM には `root`、`nobody`、`pcuser` が最初からある。ボリュームにはモードビットだけで、次の構成を用意した: `app/`(所有者 1001、755)、`shared-ro/`(root、755、既存ファイル 1 つ)、`public.txt`(root、644)、`secret.txt`(root、600)。`FileSystemUnixUser=s3ap_app` で構成 3 をデプロイした。
 
@@ -211,6 +211,57 @@ ONTAP 側で詰まった点が 1 つある。NFSv4.1 のクライアントから
 
 撤去後は、SVM、ボリューム、バックアップ、Access Point、VPC エンドポイント、OIDC プロバイダ、ECS / EKS クラスタ、CloudFormation スタック、FSx のセキュリティグループの ingress、この VPC のネットワークインターフェイス数(72)がベースラインと一致した。
 
+### 5.5 コンテナから測った S3 Access Points のスループット
+
+**環境** [実測: 2026-11-11 23:29〜2026-11-12 00:12 UTC、ap-northeast-1a、各点 1 回の測定、ばらつきは未収束]
+
+| 項目 | 値 |
+|---|---|
+| ファイルシステム | 既存の SINGLE_AZ_1(第 1 世代)、1 HA ペア、スループット容量 128 MBps、SSD 1024 GiB、SSD IOPS 3,072(自動)、ONTAP 9.18.1P6。測定前の 24 時間は DataRead / DataWrite が 0 |
+| ボリューム | 使い捨ての SVM 上の 100 GiB、UNIX スタイル、ストレージ効率化オフ、階層化ポリシー NONE |
+| アクセスポイント | VPC origin、`FileSystemIdentity=root`(測定条件)、既存の S3 Gateway エンドポイント経由、ARN 指定 |
+| ハーネス | 兄弟リポジトリ S3-Burst の `scripts/measure_s3_throughput.py`(コミット fdfe813)をそのまま使用。boto3 1.44.0、Python 3.12、1 点 30 秒、ウォームアップ 5 秒、再試行なし(503 を数える)、書き込みは非圧縮のランダムデータ |
+| クライアント | ECS Fargate(0.5 vCPU / 2 GB、2 vCPU / 4 GB、8 vCPU / 16 GB)、EKS Fargate(2 vCPU、割り当て 5 GB)、対照に EC2 c5n.2xlarge。すべて 1a |
+
+0.5 vCPU のタスクは最初 1 GB で、並列 64 × 8 MiB の点でメモリ不足により強制終了された(終了コード 137)。2 GB にして測り直した。
+
+**結果(MB/s)**
+
+| クライアント | 8 MiB 書き込み(並列 16) | 8 MiB 読み込み(並列 16) | 1 MiB 書き込み(並列 64) | 1 MiB 読み込み(並列 64) | 同じクライアントから Amazon S3 の 8 MiB 読み込み(並列 16) |
+|---|---|---|---|---|---|
+| ECS Fargate 0.5 vCPU | 129.7 | 276.2 | 50.2 | 189.1 | 289.7 |
+| ECS Fargate 2 vCPU | 129.3 | 493.2 | 115.3 | 310.7 | 450.4 |
+| ECS Fargate 8 vCPU | 129.8 | 535.9 | 130.4 | 330.4 | 768.9 |
+| EKS Fargate 2 vCPU | 129.7 | 557.0 | 測っていない | 測っていない | 測っていない |
+| EC2 c5n.2xlarge(対照) | 129.7 | 485.1 | 130.5 | 測っていない | 測っていない |
+
+全点で 503(SlowDown / ServiceUnavailable)は 0 件だった。S3-Burst の同じ種類のファイルシステム(第 1 世代、128 MBps)での記録は、c5n.2xlarge の 8 MiB 並列 16 で書き込み 129.4、読み込み 480.9、c5n.9xlarge の 1 MiB 並列 64 で書き込み 131.2 MB/s である([throughput-iops-concurrency.md](https://github.com/Yoshiki0705/S3-Burst-on-ONTAP-Files/blob/main/docs/ja/verification/throughput-iops-concurrency.md)、2026-09-01)。今回の EC2 対照はこれと 1% 以内で、コンテナの数値を S3-Burst の記録につなげて読める。
+
+- **書き込みは、クライアントの大きさによらず約 130 MB/s で止まった。** 128 MBps の購入スループットに当たる上限で、S3-Burst の結論と同じである。並列を 16 から 64 に上げても伸びず、8 MiB の p50 は約 1.0 秒から約 4.0 秒に伸びた(待ち行列として現れ、503 にはならない)。
+- **読み込みはクライアントの大きさで変わった。** 0.5 vCPU では Amazon S3 に対しても 290 MB/s 前後で、クライアント側が上限だった。8 vCPU ではアクセスポイントが 536 MB/s、Amazon S3 が 769 MB/s で、ここでは差がアクセスポイント側に出ている。
+- **0.5 vCPU の 1 MiB 書き込みは 50 MB/s だった。** 同じタスクから Amazon S3 へは 181〜189 MB/s 出ている。1 リクエストあたりの待ち時間が長い経路を、少ない CPU で多数並べたことが効いていると推測するが、切り分けていない。
+- **小さなオブジェクト**(64 KiB、8 vCPU): 並列 64 で書き込み 446 req/s、読み込み 677 req/s。S3-Burst の約 420 / 約 600 req/s と同じ水準である。
+- **1 リクエストの待ち時間**(並列 1 の p50): 1 MiB の書き込み 160〜167 ms、8 MiB の書き込み 239〜254 ms、1 MiB の読み込み 45〜46 ms。S3-Burst(2026-09、ONTAP の版は未記録)の書き込み 331〜364 ms より短い。理由は確かめていない。
+- **ファイルシステムの CloudWatch**(測定中の 1 分値の最大): CPUUtilization 79%、FileServerDiskThroughputUtilization 107%、NetworkThroughputUtilization 357%。
+
+**測定前に一度だけ観測した 503**: 2026-11-11 17:44〜18:01 UTC に、空いているファイルシステムに対して並列 1 でも PutObject / GetObject の 5〜7% が約 2.1 秒後に 503 ServiceUnavailable になった。alias / ARN、path / virtual のどの指定でも起きた。同じホストから Amazon S3 へは 0/60 だった。約 5 時間後には、同じアクセスポイント、作り直したアクセスポイント、1a / 1c の Fargate のいずれでも 0 件で、本測定もこの後に行った。この時間帯は AWS Health の EC2 の運用イベント(ap-northeast-1、主に apne1-az1、ECS / Fargate のタスク起動失敗を含む)と重なるが、因果は確かめていない。アプリ側で 503 の再試行を入れておく理由にはなる。
+
+**この表が言っていないこと**: 1 回ずつの測定で、ばらつきは収束していない。Multi-AZ、第 2 世代、スループット容量の変更、Internet origin、複数タスクの同時実行、マルチパートアップロード、範囲指定の GetObject は測っていない。読み込みの事前データ(シード)はハーネスの仕様で同じバイトの繰り返しだが、ボリュームの効率化はオフにしてある。
+
+### 5.6 S3 と NFSv4.1 の間で書いたものが見えるまで
+
+**環境** [実測: 2026-11-12 00:11〜00:16 UTC、5.5 と同じボリューム、各 n=30(Fargate の書き手は n=20)]。EC2 ホストに NFSv4.1 で 2 本マウントした(`actimeo=0` と既定のオプション)。ホストの時計は Amazon Time Sync Service に同期している。
+
+| 方向 | 測り方 | p50 | 最大 |
+|---|---|---|---|
+| S3 → NFS(ホストが書き、名前で stat) | PutObject が返ってから、ファイルが期待したサイズで見えるまで | `actimeo=0` 1.5 ms、既定 1.6 ms | `actimeo=0` 2.1 ms、既定 2.3 ms |
+| NFS → S3(ホストが書いて fsync) | close の後、HeadObject が 200 を返すまで | 40 ms | 111 ms |
+| S3 → NFS(Fargate が書き、ホストが一覧) | 書き手の PutObject の開始から、ホストの `listdir` に出るまで | 210 ms(書き手の PutObject の所要は p50 214 ms) | 259 ms |
+
+S3 で書いたものは、PutObject が返った時点で NFSv4.1 から見えていた。既定のマウントでも、名前で問い合わせた場合と、ディレクトリを一覧した場合の両方で遅れは出なかった(この 1 回の測定)。Fargate の行は 2 つの時計を比べており、時計のずれは測っていない。
+
+兄弟リポジトリ S3-Burst は NFSv3(`actimeo=0`)で PutObject → NFS を p50 9 ms と測り、既定のマウントでは、既に一覧したディレクトリで新しいファイルが最大約 1 分見えないことがあると記録している([s3ap-nfs-visibility.md](https://github.com/Yoshiki0705/S3-Burst-on-ONTAP-Files/blob/main/docs/en/verification/s3ap-nfs-visibility.md)、2026-08-09)。今回の NFSv4.1 ではその遅れを観測しなかったが、クライアントのキャッシュの振る舞いはマウントのオプション、プロトコルの版、アクセスのパターンで変わる。既定のマウントで一覧を前提にするアプリは、自分の環境で確かめる。マルチパートアップロードは Complete まで NFS から見えない(S3-Burst の記録)。
+
 ---
 
 ## 6. 4 構成 × ストレージパターンの対応表
@@ -238,8 +289,10 @@ ONTAP 側で詰まった点が 1 つある。NFSv4.1 のクライアントから
 | V1 | 4 構成のデプロイとデータ疎通 | 構成 2 は 2026-10-29(4.3)、構成 1・3・4 は 2026-11-10(3.3、5.4)に確認 [実測] |
 | V2 | Trident EKS アドオンの現行名・バージョン | 2026-10-29 の ap-northeast-1 で `netapp_trident-operator` が存在し、既定は v26.6.2-eksbuild.1、対応する Kubernetes は 1.36 まで [実測]。名称と版は変わりうるため、デプロイ前に再確認する。Trident 26.10 と Kubernetes 1.37 は 9.3 |
 | V3 | EKS Pod Identity の Fargate 対応可否 | 解決: Fargate の Pod には使えない [文書]([Pod Identity の制約](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)、2026-11-10 に確認)。本メモが IRSA を採るのはこのため |
-| V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | `root` では読み書きでき、SVM が解決できない `ec2-user` では Access Point が FAILED になった。SVM のローカルユーザー(非 root)では、モードビットどおりに読み書きの範囲が絞られた(5.4)[実測]。ACL(NFSv4 ACL)や AD ユーザー(NTFS)との対応は確認していない [未測定] |
-| V5 | S3 Access Point 経由の実効スループット | 文書は「ファイルシステムのプロビジョンドスループット依存」と記載。実測は未実施 [未測定] |
+| V4 | S3 Access Point の UNIX ユーザーと ONTAP 側権限の対応 | `root` では読み書きでき、SVM が解決できない `ec2-user` では Access Point が FAILED になった。SVM のローカルユーザー(非 root)では、モードビットどおりに読み書きの範囲が絞られた(5.4)[実測]。Windows の ID(NTFS)は、兄弟リポジトリ FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns が、ローカル SMB ユーザーで DC が 0 台でも読み書きでき、NTFS ACL の拒否が ID ごとに効き、`<DOMAIN>\user` の指定は AVAILABLE になっても全操作が 503 になると記録している([portal-identity-verification-results.md](https://github.com/Yoshiki0705/FSx-for-ONTAP-S3AccessPoints-Serverless-Patterns/blob/main/docs/en/portal-identity-verification-results.md) の測定 4、2026-08-26)。到達可能な DC のあるドメインアカウントは 2026-11-12 に試したが、新しく作った AWS Managed Microsoft AD に SVM を参加させられず、確かめられなかった(下記)。NFSv4 ACL は確認していない [未測定] |
+| V5 | S3 Access Point 経由の実効スループット | コンテナ(ECS / EKS on Fargate)と EC2 から測った(5.5)[実測]。書き込みは 128 MBps の容量で約 130 MB/s に止まり、読み込みはクライアントの大きさで 276〜557 MB/s だった |
+
+**V4 のドメインアカウントで止まったこと** [実測: 2026-11-12、ap-northeast-1、1 回の観測]。使い捨ての AWS Managed Microsoft AD(Standard)を作り、使い捨ての SVM を FSx API で参加させると、SVM は MISCONFIGURED になり、理由は「指定した Active Directory 内に SVM を作成できない」だけだった。同じ SVM で ONTAP REST API から CIFS サーバを直接作ると、`RESULT_ERROR_LDAPSERVER_INVALID_CREDENTIALS` で失敗した。DC の 88 番と 389 番には接続でき、Kerberos の事前認証は通っていた(パスワードを誤ると、Kerberos の事前認証エラーに変わる)。同じ管理者の認証情報で、ホストから LDAP の simple bind は成功した。`user@domain` の形式でも、`security.session_security` を `seal` にしても同じだった。症状は NetApp の [CONTAP-821088](https://kb.netapp.com/on-prem/ontap/da/NAS/NAS-Issues/CONTAP-821088)(Microsoft の 2026 年 10 月の DC 更新の後、SVM の AD 向け LDAP のセッションセキュリティが `none` だと LDAP の bind が Invalid Credentials になる)と一致する。新しい Managed AD の DC にこの更新が当たっているかは確かめておらず、回避手順も試し切れていない。128 MBps のファイルシステムでは SVM が 6 つまでで、7 つ目の SVM は作れなかった(`ServiceLimitExceeded`)。
 
 ### 7.1 デプロイ準備(実機検証の前段)
 
@@ -284,7 +337,7 @@ ONTAP 側で詰まった点が 1 つある。NFSv4.1 のクライアントから
 
 ## 9. 2026-10〜11 の EKS・コンテナ更新と本構成への影響
 
-**調査範囲**: 2026-11-10 に、EKS ユーザーガイドの Document history(2026-10-10 以降の項目)、AWS What's New 2 件(DRA、Gateway API)、各機能の公式ドキュメント、NetApp Trident 26.10 のリリースノートと要件ページを全文で読んだ。KubeCon North America 2026(11/9〜12)の発表は検索結果の要約しか見ておらず、本文は読んでいない [未測定]。EKS アドオンの版(9.3)、Nitro Sandbox と Trident の PV(9.1)、Auto Mode と Trident(9.2)は同日に ap-northeast-1 で実機を確かめた。それ以外は [文書] で、本リポジトリで動かしたものは無い。
+**調査範囲**: 2026-11-10 に、EKS ユーザーガイドの Document history(2026-10-10 以降の項目)、AWS What's New 2 件(DRA、Gateway API)、各機能の公式ドキュメント、NetApp Trident 26.10 のリリースノートと要件ページを全文で読んだ。KubeCon North America 2026(11/9〜12)の発表は検索結果の要約しか見ておらず、本文は読んでいない [未測定]。EKS アドオンの版(9.3)、Nitro Sandbox と Trident の PV(9.1)、Auto Mode と Trident(9.2)は同日に ap-northeast-1 で実機を確かめた。2026-11-12 に、隔離 Pod からの S3 Access Points と iSCSI(9.1)、Auto Mode の Security Groups for Pods(9.5)を追加で確かめた。それ以外は [文書] で、本リポジトリで動かしたものは無い。
 
 Trident のドライバ選択(`ontap-nas` と `ontap-san`、Windows の SMB PV は Windows ノードのみ)は Hub の[コンテナデータストア選定](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/reference/decision-trees/container-datastore-selection.md)にある。同ページは Nitro Sandbox、Auto Mode、Trident 26.10 を扱っていないため、本章はその差分である。 <!-- spoke-checked: ontap-nas -->
 
@@ -294,6 +347,7 @@ Trident のドライバ選択(`ontap-nas` と `ontap-san`、Windows の SMB PV �
 | EKS Auto Mode と Karpenter の DRA 対応 | 9.2 | なし |
 | Trident 26.10 と Kubernetes 1.37 | 9.3 | なし |
 | Auto Mode の Gateway API、Argo CD 機能の更新、`ec2:CopyVolumes` | 9.4 | なし |
+| Auto Mode の Security Groups for Pods(2026-11) | 9.5 | なし(Fargate の Pod は対象外。Auto Mode の Pod から S3 Access Points を呼ぶ構成は 9.5) |
 
 ### 9.1 Nitro Sandbox の隔離 Pod とストレージ
 
@@ -320,13 +374,43 @@ Pod ごとに専用の Nitro Sandbox(Firecracker の microVM)で動かす機能�
 | 対照: 隔離 Pod が `emptyDir` だけを使う | 成立。Pod 内のカーネルは 6.18.54、通常ノードは 6.18.56 で、別のカーネルで動いている |
 | 対照: 隔離 Pod が Amazon EBS の PVC(Auto Mode の EBS CSI)をマウント | 成立。書き込みと読み戻しができた |
 
-隔離 Pod は同じクラスタ、同じノード種別(c8a.large)で成立しており、EBS の PVC も使えた。失敗したのは Trident の NFS の PV だけである。この結果は、同ページがストレージとして挙げた方式に Trident が含まれないことと整合する。AWS のサンプル集には、隔離 Pod の永続ストレージとして `ebs`、`efs`、`s3-files` の 3 つのブループリントがある(出典: [sample-eks-nitro-sandbox の storage](https://github.com/aws-samples/sample-eks-nitro-sandbox/tree/main/examples/storage))。FSx for ONTAP を隔離 Pod の永続ストレージにする公開された手順は見つかっていない。AWS の [Containers Blog](https://aws.amazon.com/blogs/containers/aws-nitro-sandboxes-hardware-enforced-workload-isolation-on-amazon-eks/) は、CSI ボリュームは通常の Pod と同じ方法で VM に渡されると書くが、Trident の NFS の PV はこの観測では渡らなかった。[Compute Blog](https://aws.amazon.com/blogs/compute/nitro-sandboxes-hardware-isolation-for-every-eks-pod-ecs-task-and-ec2-workload/) は、Sandbox がストレージに届く方法を EC2 と同じ(永続ボリュームは EBS、ネットワーク越しに S3 と EFS)と書く。隔離 Pod から S3 Access Points を S3 SDK で呼ぶ構成はこの記述の範囲に入ると読めるが、試していない [未測定](2026-11-11 に両方を読んだ)。失敗の原因そのもの(NodePublish がホスト側で完了しているのに Sandbox にマウント先が引き渡されない、といった推測)は、Trident の info レベルのログに記録が無く、切り分けていない。1 回の観測で、再現と別バージョンでの挙動は未確認である。
+隔離 Pod は同じクラスタ、同じノード種別(c8a.large)で成立しており、EBS の PVC も使えた。失敗したのは Trident の NFS の PV だけである。この結果は、同ページがストレージとして挙げた方式に Trident が含まれないことと整合する。AWS のサンプル集には、隔離 Pod の永続ストレージとして `ebs`、`efs`、`s3-files` の 3 つのブループリントがある(出典: [sample-eks-nitro-sandbox の storage](https://github.com/aws-samples/sample-eks-nitro-sandbox/tree/main/examples/storage))。FSx for ONTAP を隔離 Pod の永続ストレージにする公開された手順は見つかっていない。AWS の [Containers Blog](https://aws.amazon.com/blogs/containers/aws-nitro-sandboxes-hardware-enforced-workload-isolation-on-amazon-eks/) は、CSI ボリュームは通常の Pod と同じ方法で VM に渡されると書くが、Trident の NFS の PV はこの観測では渡らなかった。[Compute Blog](https://aws.amazon.com/blogs/compute/nitro-sandboxes-hardware-isolation-for-every-eks-pod-ecs-task-and-ec2-workload/) は、Sandbox がストレージに届く方法を EC2 と同じ(永続ボリュームは EBS、ネットワーク越しに S3 と EFS)と書く。隔離 Pod から S3 Access Points を S3 SDK で呼ぶ構成はこの記述の範囲に入ると読め、2026-11-12 に実機で確かめた(下の「隔離 Pod から S3 Access Points」)。失敗の原因そのもの(NodePublish がホスト側で完了しているのに Sandbox にマウント先が引き渡されない、といった推測)は、Trident の info レベルのログに記録が無く、切り分けていない。1 回の観測で、再現と別バージョンでの挙動は未確認である。
 
-iSCSI の PV を隔離 Pod に渡せるかは、Auto Mode のノードで iSCSI 自体が使えなかったため(9.2)、確かめられていない。`sandbox.amazonaws.com/network-isolated: "true"` の Pod はネットワークデバイスを持たず、EFS は使えないと明記されている。同じ理由でネットワーク経由の FSx for ONTAP にも到達できないと推測するが、これは試していない。
+`sandbox.amazonaws.com/network-isolated: "true"` の Pod はネットワークデバイスを持たず、EFS は使えないと明記されている。同じ理由でネットワーク経由の FSx for ONTAP にも到達できないと推測するが、これは試していない。
 
-**公開での追跡** [2026-11-10 に提出]。同ページの冒頭は、ストレージを「標準の Kubernetes CSI ドライバ」で使えると書くが、サードパーティの CSI ドライバの NFS ボリュームには触れていない。この点の明記を[文書フィードバック](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259)で、サードパーティ CSI の NFS ボリュームの対応を[機能要望](https://github.com/aws/containers-roadmap/issues/2911)で、iSCSI / NVMe/TCP のブロックボリュームの対応を[別の機能要望](https://github.com/aws/containers-roadmap/issues/2912)で出した。ブロックの要望には、隔離 Pod での iSCSI / NVMe/TCP を試していないことを書いた。issue の提出は、AWS が受理や優先付けをしたことを意味しない。
+**隔離 Pod から S3 Access Points** [実測: 2026-11-12、ap-northeast-1、Kubernetes v1.36.5 の Auto Mode、各ケース 1 回の観測]。5.5 のアクセスポイント(VPC origin)に、Cedar ポリシーを付けない隔離 Pod から PutObject 3 つ(1 つはプレフィックス付き)、GetObject と sha256 の比較、区切り文字付きの ListObjectsV2 を行った。
 
-構成 3・4 で使う S3 Access Points のオブジェクト API は、ネットワーク経由の SDK 呼び出しなので、Sandbox の Pod からも原理的には使える。ただし認証は注意が要る。隔離モードではサービスアカウントのトークンが Sandbox に複製されず、IMDS からは認証情報を取れない(配置情報の 5 パスのみ応答する)。一方で EKS Pod Identity の認証情報は許可されている。構成 4 の IRSA(サービスアカウントのトークンを使う)が隔離モードの Pod で動くかは確認しておらず、Pod Identity を使う設計が文書上は素直である。なお V3 のとおり、Pod Identity の Fargate 対応は別途未測定である。
+| ケース | 結果 |
+|---|---|
+| 隔離 Pod + EKS Pod Identity | 成立。sha256 が一致し、一覧もプレフィックスどおり。Pod 内のカーネルは 6.18.54 |
+| 隔離 Pod + IRSA | 成立。トークンファイルが Pod 内にあり、AssumeRoleWithWebIdentity で認証された |
+| 通常の Pod + Pod Identity / IRSA(対照) | どちらも成立。カーネルは 6.18.56 |
+
+文書は、隔離モードではサービスアカウントのトークンを Sandbox に複製しないと書き、Cedar ポリシーを付ける場合は IRSA に `--with-irsa` が要ると書く([Pod Identity and credentials](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing-metadata-credentials.html))。ポリシーを付けない隔離 Pod では、この観測のとおり IRSA のトークンも届いた。ポリシーを付けた構成は試していない。
+
+**隔離 Pod からのスループット**(5.5 と同じハーネス、8 MiB、並列 16、c5a.xlarge のノード、Pod は 2 vCPU / 4 GiB、1a)。Nitro Sandbox はネットワークを既定で 100 Mbps と 1,500 パケット/秒に絞り、ベンチマークの前に両方を上げるよう文書が書いている([Resource isolation and throttling](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing-resource-isolation.html))。
+
+| 設定 | 書き込み(MB/s) | 読み込み(MB/s) |
+|---|---|---|
+| 既定の制限 | 12.4 | 8.6 |
+| 1 Gbps と 15,000 パケット/秒(文書の例) | 58.0 | 60.1 |
+| 制限を `disabled`(2 回) | 47.8、53.9 | 260.3、255.7 |
+| 同じノードの通常の Pod(対照) | 129.6 | 264.6 |
+
+既定の制限では、書き込みが文書どおり約 12.5 MB/s に止まった。制限を外すと読み込みは通常の Pod と同じ水準になったが、書き込みは 50〜60 MB/s に止まり、p99 は約 10 秒だった。2 回とも同じ傾向で、原因は切り分けていない。測っていない範囲: 他のノード種別、Pod のサイズ、並列度、長時間の連続転送。
+
+**隔離 Pod のブロックボリューム(iSCSI)** [実測: 2026-11-12、ap-northeast-1、各ケース 1 回の観測]。Auto Mode のノードには iSCSI のツールが無い(9.2)。文書は、Auto Mode の外で隔離 Pod を動かすには Nitro Sandbox のランタイムを入れたカスタム AMI と `EnclaveOptions.Enabled=true` が要ると書く([Create and update a Nitro Sandbox AMI](https://docs.aws.amazon.com/eks/latest/userguide/sandboxing-ami-create-update.html))。そこで、EKS 最適化 AMI(Amazon Linux 2023、1.36.5-20261107)に、[amazon-eks-ami](https://github.com/awslabs/amazon-eks-ami) の `install-pod-isolation.sh`(コミット cb447b9、ゲストイメージ 2026-11-06、Firecracker v1.18.0)と、構成 2 と同じ iSCSI / multipath の準備を加えた AMI を作った。これを c5a.xlarge 1 台の managed node group に載せ、同じ Auto Mode のクラスタに参加させた。ノードは `eks.amazonaws.com/nitro-sandbox=true` を持ち、Trident の node pod も登録された。
+
+| ケース | 結果 |
+|---|---|
+| 通常の Pod が iSCSI の PVC(ext4)をマウント | 成立。multipath のデバイスとして見えた |
+| 隔離 Pod が iSCSI の PVC(ext4)をマウント | **成立**。Pod 内では virtio-blk の `/dev/vdd`(1 GiB)として見えた。隔離 Pod が書いたマーカーとファイルの sha256 を、Pod を消した後に通常の Pod から読み戻して一致した |
+| 隔離 Pod が iSCSI の PVC を `volumeMode: Block` で使う | **失敗**。`/dev/xvdp` は現れたが、デバイス番号がゲストのルートディスクの 5 MiB のパーティションと同じで、1 GiB のデバイスではなかった。書き込みは `Operation not permitted` |
+| NVMe/TCP のバックエンド | 作成できなかった(`no NVMe data LIFs found on SVM`)。FSx for ONTAP の NVMe/TCP は第 2 世代のファイルシステム(HA ペア 6 以下)が対象で([Provisioning NVMe/TCP for Linux](https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/provision-nvme-linux.html))、今回のファイルシステムは第 1 世代である [未測定] |
+
+したがって、ファイルシステムとしての iSCSI の PV は、カスタム AMI のノードの隔離 Pod に渡った。Trident の NFS の PV(上の表)とは結果が分かれた。Auto Mode のノードではこの構成は取れず、AMI の作成と更新が利用者の作業になる。raw の block は渡らなかった。1 回の観測で、AMI やランタイムの更新で変わりうる。
+
+**公開での追跡** [2026-11-10 に提出]。同ページの冒頭は、ストレージを「標準の Kubernetes CSI ドライバ」で使えると書くが、サードパーティの CSI ドライバの NFS ボリュームには触れていない。この点の明記を[文書フィードバック](https://github.com/awsdocs/amazon-eks-user-guide/issues/1259)で、サードパーティ CSI の NFS ボリュームの対応を[機能要望](https://github.com/aws/containers-roadmap/issues/2911)で、iSCSI / NVMe/TCP のブロックボリュームの対応を[別の機能要望](https://github.com/aws/containers-roadmap/issues/2912)で出した。ブロックの要望には、提出時点では隔離 Pod での iSCSI / NVMe/TCP を試していないと書いた。その後 2026-11-12 に、カスタム AMI のノードで iSCSI のファイルシステムとしての PV は渡り、raw の block は渡らないことを確かめた(上の表)。issue の提出は、AWS が受理や優先付けをしたことを意味しない。
 
 Sandbox に制約が多い項目(`hostNetwork: true` で起動失敗、`hostUsers: false` 非対応、GPU 非対応、Pod あたりの vCPU 密度の上限など)は、Trident の node pod そのものには当たらないと推測する。node pod が使うのは通常のランタイムで、Sandbox を指定するのはアプリケーションの Pod だからである。この点も文書に明記はない。
 
@@ -345,7 +429,7 @@ DRA(Dynamic Resource Allocation)の対象は NVIDIA GPU と EFA で、ストレ�
 | NFS の PV を Pod にマウント | **成立**。ノード 2 台にまたがる Pod 間で書いたマーカーを読めた。新しいノードでは Trident の node pod が登録されるまで `CSINode … does not contain driver` で数十秒失敗してから成功した |
 | iSCSI の PV を Pod にマウント | **失敗**。`unable to attach: open-iscsi tools not found on host`。`tridentctl get node` の IQN と SERVICES が空で、ログは `Could not read initiatorname.iscsi; perhaps iSCSI is not installed?` |
 
-したがって、Auto Mode の管理ノードでは NFS の PV は使え、iSCSI の PV は使えない。AMI を選べず、ノードにソフトウェアを導入できないため、構成 2 の `PrepareNodesForIscsi` の方式で補うこともできない。iSCSI(ブロック)が要る場合は、managed node group など AMI を制御できるノードを使う。Auto Mode でのこの結果は 1 回の観測で、将来の AMI 更新で変わりうる。
+したがって、Auto Mode の管理ノードでは NFS の PV は使え、iSCSI の PV は使えない。AMI を選べず、ノードにソフトウェアを導入できないため、構成 2 の `PrepareNodesForIscsi` の方式で補うこともできない。iSCSI(ブロック)が要る場合は、managed node group など AMI を制御できるノードを使う。Auto Mode のクラスタに managed node group を足す形でも動いた(9.1 のカスタム AMI。そのときは vpc-cni、kube-proxy、coredns のアドオンを追加した)。Auto Mode でのこの結果は 1 回の観測で、将来の AMI 更新で変わりうる。
 
 ### 9.3 Trident 26.10 と Kubernetes 1.37
 
@@ -359,6 +443,38 @@ DRA(Dynamic Resource Allocation)の対象は NVIDIA GPU と EFA で、ストレ�
 - EKS Auto Mode の Gateway API 対応(2026-10): ALB / NLB による通信制御で、ストレージの経路には関与しない。
 - EKS Capability for Argo CD の通知、ApplicationSet の webhook、source hydrator(2026-10〜11): 4.2 のとおり、TridentBackendConfig / StorageClass / PVC は CloudFormation で作れず、スタック完了後に kubectl などで適用する。この適用を GitOps に載せる選択肢になりうるが、本リポジトリでは試していない。 <!-- spoke-checked: helm -->
 - `ec2:CopyVolumes`(2026-10-26): Auto Mode の EBS CSI が、スナップショットなしで既存の PVC から別の PVC を作るための権限である。EBS ボリュームが対象で、FSx for ONTAP の PV には関与しない。
+
+### 9.5 Auto Mode の Security Groups for Pods と NetworkPolicy
+
+EKS Auto Mode が 2026-11 に Security Groups for Pods に対応した。Kubernetes 1.36 以上で使え、Auto Mode の料金に含まれる(出典: [What's New](https://aws.amazon.com/about-aws/whats-new/2026/11/amazon-eks-auto-mode-security-groups-for-pods/))。仕組みは文書による(出典: [Assign security groups to individual Pods in EKS Auto Mode](https://docs.aws.amazon.com/eks/latest/userguide/auto-sgp.html))。
+
+- `eks.amazonaws.com/v1` の `SecurityGroupPolicy` が、ラベルかサービスアカウントで Pod を選ぶ。選ばれた Pod には、DRA の resource claim を通して専用の branch ネットワークインターフェイスが付き、指定した SG だけが評価される。
+- Auto Mode 以外のクラスタの `vpcresources.k8s.aws/v1beta1` とは別のリソースで、マニフェストに互換は無い。
+- 1 つの Pod に当たるポリシーは 1 つまで。同じノード上の Pod 間の通信も SG で評価される。
+- IMDS、EKS Pod Identity Agent、kubelet のプローブ、CoreDNS への通信は評価の対象外である。
+- クラスタロールに `ec2:CreateNetworkInterfacePermission` を足す必要がある。
+
+役割の分担について、EKS Best Practices(Auto Mode 以前の VPC CNI 版)は、クラスタ外の AWS サービスへのネットワーク制御には Security Groups for Pods を強く推奨し、Pod 間(East/West)の通信には network policy を検討するよう書いている(出典: [Security Groups Per Pod](https://docs.aws.amazon.com/eks/latest/best-practices/sgpp.html))。Auto Mode の network policy は、ConfigMap `amazon-vpc-cni` の `enable-network-policy-controller: "true"` で有効になる(出典: [Use Network Policies with EKS Auto Mode](https://docs.aws.amazon.com/eks/latest/userguide/auto-net-pol.html))。
+
+![図 5: Amazon EKS Auto Mode のクラスタで、SG app を付けたクライアントの Pod は S3 Gateway エンドポイントから S3 Access Points(VPC origin)を経て Amazon FSx for NetApp ONTAP に届き、SG srv を付けたサーバの Pod の 8080 にも届いた。ラベルが違う Pod の 8080 は NetworkPolicy で拒否された](../_assets/images/s3ap-pod-network-controls.svg)
+
+図 5: Pod 間は NetworkPolicy、AWS のリソースへは Pod の SG で絞った結果。Pod のアイコンは [Kubernetes コミュニティのアイコン](https://github.com/kubernetes/community/tree/main/icons)(Apache-2.0)
+
+**実機の結果** [実測: 2026-11-12、ap-northeast-1a、Kubernetes v1.36.5、各ケース 1 回の観測]。5.5 のアクセスポイントに対し、Pod Identity で 256 KiB の PutObject / GetObject / ListObjectsV2 を行い、あわせて SVM の管理エンドポイントへの TCP 443 と 2049 の接続を試した。SG はすべて使い捨てで、共有している FSx for ONTAP の SG は変えていない(この SG は VPC の CIDR 全体を受け付けている)。
+
+| Pod に付けた SG | S3 Access Points | ONTAP の 443 / NFS の 2049 |
+|---|---|---|
+| 送信は S3 のプレフィックスリストへの 443 だけ | 成立(sha256 一致、一覧可) | 遮断 |
+| 送信の許可なし | 失敗 | 遮断 |
+| S3 のプレフィックスリスト + FSx の SG(SG ID 参照)への 443 / 2049 | 成立 | 接続できた |
+| 隔離 Pod(isolated-sandbox)+ 1 行目と同じ SG | 成立 | 遮断 |
+
+| 確かめたこと | 結果 |
+|---|---|
+| 送信の許可なしの SG を付けた Pod に Trident の NFS の PV をマウント | 1 MiB の書き込みと sync が成功。同じ Pod から SVM の 443 は遮断。PV の NFS はノードがマウントするので、Pod の SG の対象にならない |
+| NetworkPolicy(サーバは `role=client` のラベルからの 8080 だけ受ける)とサーバの SG(クライアントの SG からの 8080 だけ受ける)の併用 | NetworkPolicy と SG の両方が許す Pod だけ届いた。ラベルが違う Pod は NetworkPolicy で、SecurityGroupPolicy の無い Pod はサーバの SG で止まった。3 つとも S3 Access Points には届いた |
+
+S3 Access Points を使う Pod には、送信先を S3 のプレフィックスリストに絞った SG を付けられ、隔離 Pod でも効いた。Trident の PV のようにノードが通信する経路は Pod の SG では絞れないので、ノードの SG と ONTAP の export policy で絞る。Pod 間の通信は NetworkPolicy で、AWS のリソースへの通信は SG で、と分けると、上の 2 つ目の表のとおり両方が効く。測っていない範囲: FSx for ONTAP の SG の ingress 側で Pod の SG を参照する形(共有 SG のため変更しなかった)、Fargate、IPv6、5 つを超えるポリシー、大きな規模のスケジューリング。Pod の SG を持つインターフェイスは、この観測では `describe-network-interfaces` に出てこなかった。
 
 ---
 
