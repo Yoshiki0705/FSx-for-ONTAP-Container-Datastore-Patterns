@@ -67,6 +67,8 @@ ECS から FSx for ONTAP を使う手順は EC2 起動タイプ前提で文書�
 
 **観測の範囲**: NFS の export policy は、FSx for ONTAP の新しい SVM の既定のまま変更しなかった。クライアントの CIDR を絞る設計は確かめていない。
 
+- cyber リポジトリの[復旧の測定結果](https://github.com/Yoshiki0705/FSx-for-ONTAP-Cyber-Resilience-Patterns/blob/main/docs/ja/recovery-measurement-results.md#先行記録との関係)は、この記録を、測定の土台にする先行記録として挙げています。値はそちらに写されていません。
+
 ---
 
 ## 4. 構成 2: EKS on EC2 + Trident CSI
