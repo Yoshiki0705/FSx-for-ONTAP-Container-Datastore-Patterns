@@ -67,6 +67,8 @@ I wrote and read the marker with `start-task` command overrides (`sh -c`) on the
 
 **Limits of the observation**: the NFS export policy was left at the default of a new FSx for ONTAP SVM. A design that restricts it to client CIDRs was not tested.
 
+- The Cyber Resilience Patterns repository's [recovery measurement results](https://github.com/Yoshiki0705/FSx-for-ONTAP-Cyber-Resilience-Patterns/blob/main/docs/en/recovery-measurement-results.md#relation-to-earlier-records) cite this record among the earlier records that each recovery measurement builds on. Its values are not copied there.
+
 ---
 
 ## 4. Config 2: EKS on EC2 + Trident CSI
