@@ -313,7 +313,7 @@ S3 で書いたものは、PutObject が返った時点で NFSv4.1 から見え�
 |---|---|---|
 | Trident EKS アドオンの現行名・バージョン | V2 | `aws eks describe-addon-versions --addon-name netapp_trident-operator`。2026-10-29 の ap-northeast-1 では v26.6.2-eksbuild.1 が既定で、本メモの 25.02 参照から進んでいる [実測] |
 | S3 Access Point の二層認可(IAM + ファイルシステムレベルの UNIX / Windows ユーザー) | V4 | アクセスポイントに紐づく UNIX ユーザーと ONTAP 側のファイル権限の対応を実機で設計する。`root` と、ローカル UNIX ユーザーの挙動は 5.4 に記録した。NFSv4 ACL と Windows ユーザーは未確認 [文書] |
-| 対象リージョンでの提供 | V1 全般 | 第 2 世代 FSx for ONTAP は 2026-04 に 4 リージョン + GovCloud へ拡大。S3 Access Points は東京(ap-northeast-1)対応 [文書]。使うリージョンでの提供を確認する |
+| 対象リージョンでの提供 | V1 全般 | 第 2 世代 FSx for ONTAP は 2026-04 に 4 リージョン + GovCloud へ拡大。S3 Access Points は東京(ap-northeast-1)対応 [文書]。使うリージョンでの提供を確認する。第 3 世代は 2026-11 に米国東部(バージニア北部、オハイオ)と米国西部(オレゴン)で提供開始 [文書]([What's New](https://aws.amazon.com/about-aws/whats-new/2026/11/amazon-fsx-for-netapp-ontap-third-generation/))。ユーザーガイドの提供リージョン表は東京なども挙げているが、2026-11-22 の確認では東京で作成要求が拒否された([Hub のノート](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/performance/notes/third-generation-file-systems-and-where-the-sources-disagree.md))。 |
 | IRSA の trust condition(EKS Fargate) | V3 | trust は `aud` / `sub` で作成時に絞られる(5.2)。絞りが効くこと(別のサービスアカウントの Pod が拒否されること)は 2026-11-10 に確認した(5.4)[実測] |
 
 **推奨デプロイ順序**: 最小の構成 1(ECS on EC2 + NFS、CloudFormation 完結・Trident 不要・S3 Access Points 不要)から始める。疎通(タスクから `/data` への読み書き)を確認したら削除し、構成 2(Trident の Kubernetes オブジェクトを kubectl / Helm で適用)、構成 3・4(S3 Access Points、IRSA の手動手順あり)へ段階的に進む。
