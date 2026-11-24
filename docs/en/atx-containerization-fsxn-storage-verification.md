@@ -166,7 +166,7 @@ Because access is via the S3 SDK, the app must be written for object access. It 
 - Maximum object size for uploads is 50 GiB.
 - Storage class is FSX_ONTAP only; server-side encryption is SSE-FSX only.
 - Not supported: versioning, Object Lock, lifecycle, conditional writes, Requester Pays, static website hosting, ACLs other than `bucket-owner-full-control`.
-- CopyObject / UploadPartCopy are same-access-point and same-Region only.
+- CopyObject / UploadPartCopy can copy server-side within a Region, between an Amazon S3 bucket and an FSx for ONTAP access point and between access points. When the destination is an FSx volume, encryption is limited to SSE-FSX and the storage class to `FSX_ONTAP` (source: [What's New: server-side copy with S3 Access Points](https://aws.amazon.com/about-aws/whats-new/2026/11/s3-access-points-server-side-copy-fsx/), announced 2026-11-22, checked 2026-11-24). On 2026-11-24 the hub recorded, on first-generation Single-AZ in ap-northeast-1 (ONTAP 9.19.1P4), successful 8 MiB CopyObject calls (bucket to access point, access point to bucket, within one access point, and between access points on different file systems) and an UploadPartCopy (2 parts) from a key containing `/`, with matching SHA-256 [Tested: hub] ([hub note, in Japanese](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/data-utilization/notes/s3-access-point-constraints.md)). Objects larger than 8 MiB, cross-account copy, and access points on FlexCache volumes were not checked [Not measured]. The UploadPartCopy `NoSuchKey` that another repository recorded in 2026-08 did not reproduce in this recheck.
 
 ### 5.4 Hands-on results for configs 3 and 4
 
