@@ -166,7 +166,7 @@ S3 SDK でアクセスするため、アプリはオブジェクトアクセス�
 - アップロードの最大オブジェクトサイズは 50 GiB。
 - ストレージクラスは FSX_ONTAP のみ、サーバーサイド暗号化は SSE-FSX のみ。
 - 非対応: バージョニング、Object Lock、ライフサイクル、条件付き書き込み、Requester Pays、静的 Web ホスティング、`bucket-owner-full-control` 以外の ACL。
-- CopyObject / UploadPartCopy は同一アクセスポイント内・同一リージョンのみ。
+- CopyObject / UploadPartCopy は、同一リージョン内で、Amazon S3 のバケットと FSx for ONTAP のアクセスポイントの間、およびアクセスポイント同士でサーバー側のコピーができる。コピー先が FSx のボリュームのときは、暗号化は SSE-FSX、ストレージクラスは `FSX_ONTAP` に限られる(出典: [What's New: S3 Access Points のサーバー側コピー](https://aws.amazon.com/about-aws/whats-new/2026/11/s3-access-points-server-side-copy-fsx/)、2026-11-22 の告知、確認日 2026-11-24)。Hub が 2026-11-24 に ap-northeast-1 の第 1 世代 Single-AZ(ONTAP 9.19.1P4)で、8 MiB のオブジェクトの CopyObject(バケット → アクセスポイント、アクセスポイント → バケット、同一アクセスポイント内、別ファイルシステムのアクセスポイントの間)と、`/` を含むキーをコピー元にした UploadPartCopy(2 パート)が成功し、中身の SHA-256 が一致したことを記録している [実測: Hub]([Hub のノート](https://github.com/Yoshiki0705/FSx-for-ONTAP-Adoption-Playbook/blob/main/docs/ja/domains/data-utilization/notes/s3-access-point-constraints.md))。8 MiB より大きいオブジェクト、アカウントをまたぐコピー、FlexCache ボリューム上のアクセスポイントは確かめていない [未測定]。2026-08 に他の Spoke が記録した UploadPartCopy の `NoSuchKey` は、この再確認では再現しなかった。
 
 ### 5.4 構成 3・4 の実機確認結果
 
